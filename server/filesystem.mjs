@@ -2,7 +2,7 @@ import fs from 'node:fs/promises';
 import fsSync from 'node:fs';
 import path from 'node:path';
 
-export const PROJECTS_ROOT = path.resolve(process.cwd(), 'Project');
+export const PROJECTS_ROOT = path.resolve(process.env.LEDGER_PROJECTS_ROOT || path.resolve(process.cwd(), 'Project'));
 const META_FILE = '.ledger-project.json';
 const MAX_FILE_BYTES = 1_500_000;
 const IMAGE_TYPES = new Set(['.png', '.jpg', '.jpeg', '.gif', '.webp', '.avif', '.svg']);

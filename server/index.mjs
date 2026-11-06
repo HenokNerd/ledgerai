@@ -3,7 +3,6 @@ import { randomUUID } from 'node:crypto';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { createServer as createViteServer } from 'vite';
 import {
   PROJECTS_ROOT,
   FileSystemError,
@@ -126,6 +125,10 @@ function waitForApproval(response, id, name, args) {
 }
 
 app.post('/api/chat', async (request, response, next) => {
+  if (process.env.LEDGER_AGENT_ENABLED === 'false') {
+    response.status(503).json({ error: 'The AI agent is disabled for this deployment.' });
+    return;
+  }
   response.set({ 'Content-Type': 'text/event-stream; charset=utf-8', 'Cache-Control': 'no-cache, no-transform', Connection: 'keep-alive', 'X-Accel-Buffering': 'no' });
   response.flushHeaders();
   let clientGone = false;
@@ -237,6 +240,7 @@ if (isProduction) {
   app.use(express.static(dist, { index: false }));
   app.get('*path', (_request, response) => response.sendFile(path.join(dist, 'index.html')));
 } else {
+  const { createServer: createViteServer } = await import('vite');
   const vite = await createViteServer({ configFile: path.resolve('vite.config.ts'), server: { middlewareMode: true }, appType: 'spa' });
   app.use(vite.middlewares);
 }

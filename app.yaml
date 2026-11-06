@@ -1,0 +1,32 @@
+kind: wasmer.io/App.v0
+name: ledgerai
+app_id: da_nkPI5tJUqdmm
+owner: henoknerd
+package: .
+env:
+  NODE_ENV: production
+  LEDGER_AGENT_ENABLED: 'false'
+  LEDGER_PROJECTS_ROOT: /data/Project
+volumes:
+- name: ledger-projects
+  mount: /data
+annotations:
+  anybuild.run/config:
+    edgejs_enable: true
+    edgejs_precompile: true
+    name: out
+    node_build_command: pnpm run build
+    node_framework: vite
+    node_install_inputs:
+    - package.json
+    node_package_manager: pnpm
+    node_package_name: ledgerai
+    node_remove_native_binaries: true
+    node_server: express
+    pnpm_version: 11.25.0
+    static_dir: dist
+    commands:
+      start: node server/index.mjs
+  anybuild.run/provider: node
+  anybuild.run/version: 0.33.2
+  wasmer.io/version: 7.5.0
