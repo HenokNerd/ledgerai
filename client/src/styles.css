@@ -87,6 +87,13 @@ button:focus-visible, input:focus-visible, textarea:focus-visible { outline: 2px
 .workspace { display: flex; flex: 1; min-height: 0; overflow: hidden; }
 .sidebar { width: 272px; min-width: 272px; display: flex; flex-direction: column; background: #14151a; border-right: 1px solid #292a31; animation: sidebar-in .17s ease-out; }
 .sidebar-top { height: 60px; display: flex; align-items: center; justify-content: space-between; padding: 0 12px 0 17px; border-bottom: 1px solid #24252c; }
+.sidebar-tabs { height: 45px; flex: 0 0 45px; display: grid; grid-template-columns: 1fr 1fr; gap: 5px; padding: 6px 10px; border-bottom: 1px solid #24252c; }
+.sidebar-tab { min-width: 0; display: flex; align-items: center; justify-content: center; gap: 7px; padding: 0 8px; border: 1px solid transparent; border-radius: 7px; background: transparent; color: #858994; cursor: pointer; font-size: 11px; transition: color .14s ease, background .14s ease, border-color .14s ease; }
+.sidebar-tab:hover { color: #d4d7dd; background: #1b1c22; }
+.sidebar-tab.active { color: #c4ebf5; background: #1c2b31; border-color: #2b4650; }
+.sidebar-tab-count { min-width: 17px; padding: 1px 4px; border-radius: 5px; background: #25262d; color: #8e929c; font: 9px 'JetBrains Mono', monospace; }
+.sidebar-tab.active .sidebar-tab-count { color: #8bd5ea; background: #28444e; }
+.sidebar-tab-panel { min-height: 0; flex: 1; display: flex; flex-direction: column; }
 .eyebrow { color: #777b84; font-size: 9px; line-height: 1.2; font-weight: 700; letter-spacing: .13em; }
 .sidebar-title { color: #e2e4e9; font-size: 13px; font-weight: 600; margin-top: 3px; }
 .sidebar-heading-actions { display: flex; align-items: center; gap: 0; }
@@ -98,6 +105,26 @@ button:focus-visible, input:focus-visible, textarea:focus-visible { outline: 2px
 .sidebar-project-copy strong { color: #dfe1e7; font-size: 11px; font-weight: 600; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .sidebar-project-copy small { color: #737782; font-size: 9px; font-family: 'JetBrains Mono', monospace; }
 .sidebar-project-menu { width: 25px; height: 25px; }
+.projects-panel { min-height: 0; flex: 1; display: flex; flex-direction: column; }
+.projects-panel-heading { min-height: 65px; display: flex; align-items: center; gap: 10px; padding: 10px 13px; border-bottom: 1px solid #23242b; }
+.projects-create { width: 35px; height: 35px; flex: 0 0 35px; display: grid; place-items: center; border: 1px solid #34545e; border-radius: 9px; background: #1b3037; color: #7bd5ee; cursor: pointer; transition: background .15s ease, border-color .15s ease, transform .15s ease; }
+.projects-create:hover { background: #24404a; border-color: #4c91a5; transform: translateY(-1px); }
+.projects-heading-copy { min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+.projects-heading-copy strong { color: #dfe1e7; font-size: 11px; font-weight: 600; }
+.projects-heading-copy span { color: #777b85; font-size: 9px; }
+.projects-scroll { min-height: 0; flex: 1; overflow: auto; padding: 10px; display: flex; flex-direction: column; gap: 8px; scrollbar-width: thin; scrollbar-color: #35363c transparent; }
+.project-card { width: 100%; min-height: 68px; display: flex; align-items: center; gap: 10px; padding: 10px; border: 1px solid #2b2d34; border-radius: 10px; background: #191a20; color: #dfe1e7; text-align: left; cursor: pointer; transition: background .14s ease, border-color .14s ease, transform .14s ease; }
+.project-card:hover { background: #202228; border-color: #3a414a; transform: translateY(-1px); }
+.project-card.selected { border-color: #3d6978; background: #1b282e; }
+.project-card-icon { width: 36px; height: 36px; flex: 0 0 36px; display: grid; place-items: center; border: 1px solid #2e444b; border-radius: 9px; background: #20333a; color: #78cde4; }
+.project-card-copy { min-width: 0; flex: 1; display: flex; flex-direction: column; gap: 5px; }
+.project-card-copy strong { overflow: hidden; color: #e0e2e8; font-size: 11px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+.project-card-copy small { overflow: hidden; color: #777c86; font: 9px 'JetBrains Mono', monospace; text-overflow: ellipsis; white-space: nowrap; }
+.project-card-check { display: grid; place-items: center; color: #72cee7; }
+.projects-empty { margin: 26px 10px; padding: 20px 12px; display: flex; align-items: center; flex-direction: column; gap: 8px; border: 1px dashed #30333a; border-radius: 10px; color: #777c86; text-align: center; }
+.projects-empty > svg { margin-bottom: 2px; color: #5ba9c2; }
+.projects-empty strong { color: #d4d6dc; font-size: 11px; font-weight: 600; }
+.projects-empty span { max-width: 180px; font-size: 9px; line-height: 1.5; }
 .tree-heading { display: flex; align-items: center; justify-content: space-between; padding: 11px 16px 7px; color: #747882; font-size: 9px; font-weight: 700; letter-spacing: .12em; }
 .tree-root-label { color: #5f636d; font: 9px 'JetBrains Mono', monospace; text-transform: none; letter-spacing: 0; }
 .tree-scroll { flex: 1; overflow: auto; padding: 3px 6px 18px 5px; scrollbar-width: thin; scrollbar-color: #35363c transparent; }

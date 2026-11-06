@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Editor, { type OnMount } from '@monaco-editor/react';
 import {
   ArrowUp, Check, ChevronDown, Code2, Command, CornerDownLeft,
-  Eye, FilePlus2, Files, FolderPlus, LoaderCircle, Menu, MessageSquareText,
+  Eye, FilePlus2, Files, FolderOpen, FolderPlus, LoaderCircle, Menu, MessageSquareText,
   MoreHorizontal, PanelLeftClose, Plus, Save, Sparkles, Square, Trash2,
   X,
 } from 'lucide-react';
@@ -56,6 +56,7 @@ export default function App() {
   const [tree, setTree] = useState<FileNode[]>([]);
   const [treeLoading, setTreeLoading] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [sidebarTab, setSidebarTab] = useState<'files' | 'projects'>('files');
   const [projectMenuOpen, setProjectMenuOpen] = useState(false);
   const [activeFolder, setActiveFolder] = useState('');
   const [activePath, setActivePath] = useState<string | null>(null);
@@ -453,7 +454,7 @@ export default function App() {
     <div className="app-shell">
       <header className="app-header">
         <div className="header-branding">
-          <button className={`icon-button hamburger ${sidebarOpen ? 'active' : ''}`} type="button" aria-label={sidebarOpen ? 'Hide project files' : 'Show project files'} onClick={() => setSidebarOpen((open) => !open)}><Menu size={19} /></button>
+          <button className={`icon-button hamburger ${sidebarOpen ? 'active' : ''}`} type="button" aria-label={sidebarOpen ? 'Hide workspace sidebar' : 'Show files and projects'} onClick={() => setSidebarOpen((open) => !open)}><Menu size={19} /></button>
           <BrandMark />
           <span className="brand-word">ledger<span>AI</span></span>
           <span className="header-separator" />
@@ -477,12 +478,21 @@ export default function App() {
 
       <div className={`workspace ${sidebarOpen ? 'sidebar-visible' : ''}`}>
         {sidebarOpen && <aside className="sidebar">
-          <div className="sidebar-top"><div><span className="eyebrow">WORKSPACE</span><div className="sidebar-title">Explorer</div></div><div className="sidebar-heading-actions"><FileIconButton title="New file" onClick={() => createDialog('file')}><FilePlus2 size={15} /></FileIconButton><FileIconButton title="New folder" onClick={() => createDialog('folder')}><FolderPlus size={15} /></FileIconButton><FileIconButton title="Hide file explorer" onClick={() => setSidebarOpen(false)}><PanelLeftClose size={15} /></FileIconButton></div></div>
-          <div className="sidebar-project"><div className="sidebar-project-icon"><Code2 size={15} /></div><div className="sidebar-project-copy"><strong>{projectName}</strong><small>{project ? `Project/${project.id}` : 'Choose a project'}</small></div><button type="button" className="icon-button sidebar-project-menu" title="Project options" onClick={() => setProjectMenuOpen((open) => !open)}><MoreHorizontal size={16} /></button></div>
-          <div className="tree-heading"><span>FILES</span><span className="tree-root-label">{project?.id || 'No project'}</span></div>
-          <div className="tree-scroll">
-            {!project ? <div className="sidebar-empty"><Files size={21} /><strong>No project open</strong><span>Create or choose a project to browse its files.</span><button type="button" onClick={() => { setDialog({ kind: 'project', mode: 'create' }); setCreatedDialogName(''); }}><Plus size={14} /> Create project</button></div> : treeLoading ? <div className="tree-loading"><LoaderCircle size={14} className="spin" /> Loading files…</div> : <FileTree nodes={tree} activePath={activePath} onOpenFile={(path) => void openFile(path)} onDelete={(node) => setDialog({ kind: 'delete-path', node })} onFolderFocus={setActiveFolder} onPreviewImage={(path) => setImage({ src: api.assetUrl(project.id, path), label: path.split('/').pop() || path })} />}
+          <div className="sidebar-top"><div><span className="eyebrow">WORKSPACE</span><div className="sidebar-title">{sidebarTab === 'files' ? 'Explorer' : 'Projects'}</div></div><div className="sidebar-heading-actions">{sidebarTab === 'files' && <><FileIconButton title="New file" onClick={() => createDialog('file')}><FilePlus2 size={15} /></FileIconButton><FileIconButton title="New folder" onClick={() => createDialog('folder')}><FolderPlus size={15} /></FileIconButton></>}<FileIconButton title="Hide workspace sidebar" onClick={() => setSidebarOpen(false)}><PanelLeftClose size={15} /></FileIconButton></div></div>
+          <div className="sidebar-tabs" role="tablist" aria-label="Workspace sidebar">
+            <button id="files-tab" type="button" role="tab" aria-selected={sidebarTab === 'files'} aria-controls="files-panel" className={`sidebar-tab ${sidebarTab === 'files' ? 'active' : ''}`} onClick={() => setSidebarTab('files')}><Files size={14} /><span>Files</span></button>
+            <button id="projects-tab" type="button" role="tab" aria-selected={sidebarTab === 'projects'} aria-controls="projects-panel" className={`sidebar-tab ${sidebarTab === 'projects' ? 'active' : ''}`} onClick={() => setSidebarTab('projects')}><FolderOpen size={14} /><span>Projects</span><span className="sidebar-tab-count">{projects.length}</span></button>
           </div>
+          {sidebarTab === 'files' ? <div className="sidebar-tab-panel" id="files-panel" role="tabpanel" aria-labelledby="files-tab">
+            <div className="sidebar-project"><div className="sidebar-project-icon"><Code2 size={15} /></div><div className="sidebar-project-copy"><strong>{projectName}</strong><small>{project ? `Project/${project.id}` : 'Choose a project'}</small></div><button type="button" className="icon-button sidebar-project-menu" title="Project options" onClick={() => setProjectMenuOpen((open) => !open)}><MoreHorizontal size={16} /></button></div>
+            <div className="tree-heading"><span>FILES</span><span className="tree-root-label">{project?.id || 'No project'}</span></div>
+            <div className="tree-scroll">
+              {!project ? <div className="sidebar-empty"><Files size={21} /><strong>No project open</strong><span>Create or choose a project to browse its files.</span><button type="button" onClick={() => { setDialog({ kind: 'project', mode: 'create' }); setCreatedDialogName(''); }}><Plus size={14} /> Create project</button></div> : treeLoading ? <div className="tree-loading"><LoaderCircle size={14} className="spin" /> Loading files…</div> : <FileTree nodes={tree} activePath={activePath} onOpenFile={(path) => void openFile(path)} onDelete={(node) => setDialog({ kind: 'delete-path', node })} onFolderFocus={setActiveFolder} onPreviewImage={(path) => setImage({ src: api.assetUrl(project.id, path), label: path.split('/').pop() || path })} />}
+            </div>
+          </div> : <div className="projects-panel" id="projects-panel" role="tabpanel" aria-labelledby="projects-tab">
+            <div className="projects-panel-heading"><button className="projects-create" type="button" aria-label="Create project" title="Create project" onClick={() => { setCreatedDialogName(''); setDialog({ kind: 'project', mode: 'create' }); }}><Plus size={18} /></button><div className="projects-heading-copy"><strong>Available projects</strong><span>Select one to open its files</span></div></div>
+            <div className="projects-scroll">{projects.length ? projects.map((item) => <button key={item.id} type="button" className={`project-card ${project?.id === item.id ? 'selected' : ''}`} aria-current={project?.id === item.id ? 'page' : undefined} title={`Open ${item.name}`} onClick={() => { selectProject(item); setSidebarTab('files'); }}><span className="project-card-icon"><Code2 size={18} /></span><span className="project-card-copy"><strong>{item.name}</strong><small>Project/{item.id}</small></span>{project?.id === item.id && <span className="project-card-check"><Check size={15} /></span>}</button>) : <div className="projects-empty"><FolderOpen size={22} /><strong>No projects yet</strong><span>Create a project to give it a dedicated workspace.</span></div>}</div>
+          </div>}
           <div className="sidebar-footer"><span className="sandbox-lock"><Command size={13} /> Sandboxed filesystem</span><span className="sandbox-state">Project/</span></div>
         </aside>}
 
