@@ -64,6 +64,7 @@ export default function App() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [sidebarTab, setSidebarTab] = useState<'files' | 'projects'>('files');
   const [theme, setTheme] = useState<ThemeMode>(readTheme);
+  const [agentEnabled, setAgentEnabled] = useState<boolean | null>(null);
   const [projectMenuOpen, setProjectMenuOpen] = useState(false);
   const [activeFolder, setActiveFolder] = useState('');
   const [activePath, setActivePath] = useState<string | null>(null);
@@ -128,6 +129,12 @@ export default function App() {
     document.querySelector('meta[name="theme-color"]')?.setAttribute('content', theme === 'light' ? '#F6E9C7' : '#202A2F');
     try { window.localStorage.setItem('ledger-theme', theme); } catch { /* Theme remains usable without storage. */ }
   }, [theme]);
+
+  useEffect(() => {
+    let active = true;
+    void api.health().then(({ agentEnabled: available }) => { if (active) setAgentEnabled(available); }).catch(() => { if (active) setAgentEnabled(false); });
+    return () => { active = false; };
+  }, []);
 
   useEffect(() => {
     void refreshProjects().catch((error) => setToast(`Could not load projects: ${(error as Error).message}`));
@@ -389,7 +396,7 @@ export default function App() {
 
   const sendMessage = async (value = draft) => {
     const text = value.trim();
-    if (!text || busy) return;
+    if (!text || busy || agentEnabled !== true) return;
     const nextUser: ChatMessage = { id: id(), role: 'user', content: text };
     const nextMessages = [...messages, nextUser];
     setMessages(nextMessages);
@@ -524,9 +531,9 @@ export default function App() {
                     <div className="welcome-mark"><BrandMark /></div>
                     <h1>What are we<br /><em>building?</em></h1>
                     {project ? <div className="welcome-project"><span className="project-indicator" /><strong>{project.name}</strong><button type="button" onClick={() => { setSidebarOpen(true); setSidebarTab('files'); }}>Open files</button></div> : <button className="welcome-create" type="button" onClick={() => { setCreatedDialogName(''); setDialog({ kind: 'project', mode: 'create' }); }}><Plus size={15} /> New project</button>}
-                    <div className="starter-prompts">
+                    {agentEnabled === true && <div className="starter-prompts">
                       {(project ? ['Explore code', 'Plan a feature', 'Create a file'] : ['Explore Ledger', 'Plan an idea', 'Create a project']).map((prompt) => <button type="button" key={prompt} onClick={() => void sendMessage(prompt)}><Sparkles size={13} />{prompt}<ArrowUp size={12} /></button>)}
-                    </div>
+                    </div>}
                   </div>
                 ) : <div className="conversation-list">
                   {messages.map((message) => <article key={message.id} className={`message-row ${message.role}`}>
@@ -542,8 +549,8 @@ export default function App() {
               </div>
               <div className="composer-wrap">
                 <div className={`composer ${busy ? 'is-busy' : ''}`}>
-                  <textarea ref={draftRef} value={draft} onChange={(event) => setDraft(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); void sendMessage(); } }} placeholder="Message Ledger…" rows={1} aria-label="Message Ledger" />
-                  <div className="composer-bottom"><div className="composer-context"><span className="context-icon"><FolderOpen size={13} /></span><span>{project ? <strong>{project.name}</strong> : 'No project'}</span></div><div className="composer-controls">{busy ? <button className="send-button stop-button" type="button" onClick={cancelAgentTurn} aria-label="Stop agent"><Square size={13} fill="currentColor" /></button> : <button className="send-button" type="button" onClick={() => void sendMessage()} disabled={!draft.trim()} aria-label="Send message"><ArrowUp size={18} /></button>}</div></div>
+                  <textarea ref={draftRef} value={draft} onChange={(event) => setDraft(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); void sendMessage(); } }} placeholder={agentEnabled === false ? 'AI chat is off here' : agentEnabled === null ? 'Connecting…' : 'Message Ledger…'} rows={1} aria-label={agentEnabled === false ? 'AI chat is off' : 'Message Ledger'} disabled={agentEnabled !== true} />
+                  <div className="composer-bottom"><div className="composer-context"><span className="context-icon"><FolderOpen size={13} /></span><span>{project ? <strong>{project.name}</strong> : 'No project'}</span></div><div className="composer-controls">{busy ? <button className="send-button stop-button" type="button" onClick={cancelAgentTurn} aria-label="Stop agent"><Square size={13} fill="currentColor" /></button> : <button className="send-button" type="button" onClick={() => void sendMessage()} disabled={!draft.trim() || agentEnabled !== true} aria-label={agentEnabled === false ? 'AI chat is off' : 'Send message'}><ArrowUp size={18} /></button>}</div></div>
                 </div>
               </div>
             </section>

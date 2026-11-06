@@ -16,6 +16,7 @@ const json = (method: string, body?: unknown): RequestInit => ({
 const base = (id: string) => `/api/projects/${encodeURIComponent(id)}`;
 
 export const api = {
+  health: () => request<{ ok: boolean; agentEnabled: boolean }>('/api/health'),
   projects: () => request<Project[]>('/api/projects'),
   createProject: (name: string) => request<Project>('/api/projects', json('POST', { name })),
   renameProject: (id: string, name: string) => request<Project>(base(id), json('PATCH', { name })),

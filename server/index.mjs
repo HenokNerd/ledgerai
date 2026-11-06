@@ -46,7 +46,10 @@ function wrap(handler) {
   return (request, response, next) => Promise.resolve(handler(request, response, next)).catch(next);
 }
 
-app.get('/api/health', (_request, response) => response.json({ ok: true }));
+app.get('/api/health', (_request, response) => response.json({
+  ok: true,
+  agentEnabled: process.env.LEDGER_AGENT_ENABLED !== 'false' && Boolean(process.env.MANUS_API_URL && process.env.MANUS_API_KEY),
+}));
 app.get('/api/projects', wrap(async (_request, response) => response.json(await listProjects())));
 app.post('/api/projects', wrap(async (request, response) => response.status(201).json(await createProject(request.body?.name))));
 app.patch('/api/projects/:id', wrap(async (request, response) => response.json(await renameProject(request.params.id, request.body?.name))));
