@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Editor, { type OnMount } from '@monaco-editor/react';
 import {
-  ArrowUp, Check, ChevronDown, Code2, Command, CornerDownLeft,
+  ArrowUp, Check, ChevronDown, Code2,
   Eye, FilePlus2, Files, FolderOpen, FolderPlus, LoaderCircle, Menu, MessageSquareText,
-  MoreHorizontal, PanelLeftClose, Plus, Save, Sparkles, Square, Trash2,
+  Moon, MoreHorizontal, PanelLeftClose, Plus, Save, Sparkles, Square, Sun, Trash2,
   X,
 } from 'lucide-react';
 import FileTree, { LanguageIcon, languageForPath } from './components/FileTree';
@@ -18,16 +18,22 @@ const imagePattern = /\.(?:png|jpe?g|gif|webp|avif|svg)(?:[?#].*)?$/i;
 type DialogState = { kind: 'project'; mode: 'create' | 'rename' } | { kind: 'path'; mode: 'file' | 'folder' } | { kind: 'delete-project'; project: Project } | { kind: 'delete-path'; node: FileNode } | null;
 type PendingNavigation = { kind: 'project'; project: Project | null } | { kind: 'file'; path: string };
 type ImageState = { src: string; label: string } | null;
+type ThemeMode = 'dark' | 'light';
+
+const readTheme = (): ThemeMode => {
+  try { return window.localStorage.getItem('ledger-theme') === 'light' ? 'light' : 'dark'; }
+  catch { return 'dark'; }
+};
 
 function BrandMark({ small = false }: { small?: boolean }) {
-  return <span className={`brand-mark ${small ? 'small' : ''}`}><Sparkles size={small ? 16 : 18} strokeWidth={2.2} /></span>;
+  return <span className={`brand-mark ${small ? 'small' : ''}`} aria-hidden="true"><img src="/ledger-ai-mark.svg" alt="" /></span>;
 }
 
-function ModalFrame({ title, description, onClose, children, wide = false }: { title: string; description: string; onClose: () => void; children: React.ReactNode; wide?: boolean }) {
+function ModalFrame({ title, description, onClose, children, wide = false }: { title: string; description?: string; onClose: () => void; children: React.ReactNode; wide?: boolean }) {
   return (
     <div className="overlay" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
       <section className={`dialog ${wide ? 'dialog-wide' : ''}`} role="dialog" aria-modal="true" aria-label={title}>
-        <header className="dialog-head"><div><span className="eyebrow">LEDGER AI</span><h2>{title}</h2><p>{description}</p></div><button className="icon-button" type="button" onClick={onClose} aria-label="Close dialog"><X size={17} /></button></header>
+        <header className="dialog-head"><div><div className="dialog-title-row"><BrandMark small /><h2>{title}</h2></div>{description && <p>{description}</p>}</div><button className="icon-button" type="button" onClick={onClose} aria-label="Close dialog"><X size={17} /></button></header>
         {children}
       </section>
     </div>
@@ -57,6 +63,7 @@ export default function App() {
   const [treeLoading, setTreeLoading] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [sidebarTab, setSidebarTab] = useState<'files' | 'projects'>('files');
+  const [theme, setTheme] = useState<ThemeMode>(readTheme);
   const [projectMenuOpen, setProjectMenuOpen] = useState(false);
   const [activeFolder, setActiveFolder] = useState('');
   const [activePath, setActivePath] = useState<string | null>(null);
@@ -115,6 +122,12 @@ export default function App() {
     catch (error) { setToast((error as Error).message); setTree([]); }
     finally { setTreeLoading(false); }
   }, []);
+
+  useEffect(() => {
+    document.documentElement.dataset.theme = theme;
+    document.querySelector('meta[name="theme-color"]')?.setAttribute('content', theme === 'light' ? '#F6E9C7' : '#202A2F');
+    try { window.localStorage.setItem('ledger-theme', theme); } catch { /* Theme remains usable without storage. */ }
+  }, [theme]);
 
   useEffect(() => {
     void refreshProjects().catch((error) => setToast(`Could not load projects: ${(error as Error).message}`));
@@ -428,12 +441,20 @@ export default function App() {
   const handleEditorMount: OnMount = (editor, monaco) => {
     monaco.editor.defineTheme('ledger-midnight', {
       base: 'vs-dark', inherit: true, rules: [], colors: {
-        'editor.background': '#111216', 'editorGutter.background': '#111216', 'editorLineNumber.foreground': '#535761',
-        'editorLineNumber.activeForeground': '#adb1ba', 'editorCursor.foreground': '#53c7ed',
-        'editor.selectionBackground': '#1c536b66', 'editor.lineHighlightBackground': '#ffffff05',
+        'editor.background': '#202A2F', 'editorGutter.background': '#202A2F', 'editorLineNumber.foreground': '#7D8989',
+        'editorLineNumber.activeForeground': '#F6E9C7', 'editorCursor.foreground': '#64CDDE',
+        'editor.selectionBackground': '#34798A66', 'editor.lineHighlightBackground': '#F6E9C708',
       },
     });
-    monaco.editor.setTheme('ledger-midnight');
+    monaco.editor.defineTheme('ledger-sand', {
+      base: 'vs', inherit: true, rules: [], colors: {
+        'editor.background': '#F6E9C7', 'editor.foreground': '#242721', 'editorGutter.background': '#F6E9C7',
+        'editorLineNumber.foreground': '#918D7B', 'editorLineNumber.activeForeground': '#242721',
+        'editorCursor.foreground': '#147F91', 'editor.selectionBackground': '#65AFC344',
+        'editor.lineHighlightBackground': '#00000008', 'editorIndentGuide.background1': '#DED2B3',
+      },
+    });
+    monaco.editor.setTheme(theme === 'light' ? 'ledger-sand' : 'ledger-midnight');
     editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, () => { void saveActiveFile(); });
   };
 
@@ -445,55 +466,53 @@ export default function App() {
     (toolDetails.name === 'delete_path' && activePath && (activePath === approvalPath || activePath.startsWith(`${approvalPath}/`)))
   ));
   const deleteDescription = dialog?.kind === 'delete-project'
-    ? `This permanently deletes ${dialog.project.name} and everything in Project/${dialog.project.id}/${dirty && project?.id === dialog.project.id ? ' Your unsaved editor changes will also be discarded.' : ''}`
+    ? `This permanently deletes “${dialog.project.name}” and all its files.${dirty && project?.id === dialog.project.id ? ' Unsaved changes will also be discarded.' : ''}`
     : dialog?.kind === 'delete-path'
-      ? `This permanently deletes ${dialog.node.path}${dialog.node.type === 'directory' ? ' and everything inside it' : ''}${dirty && activePath && (activePath === dialog.node.path || activePath.startsWith(`${dialog.node.path}/`)) ? '. Your unsaved editor changes will also be discarded' : ''}.`
+      ? `Delete “${dialog.node.name}”${dialog.node.type === 'directory' ? ' and everything inside it' : ''}.${dirty && activePath && (activePath === dialog.node.path || activePath.startsWith(`${dialog.node.path}/`)) ? ' Unsaved changes will also be discarded.' : ''}`
       : '';
 
   return (
-    <div className="app-shell">
+    <div className="app-shell" data-theme={theme}>
       <header className="app-header">
         <div className="header-branding">
           <button className={`icon-button hamburger ${sidebarOpen ? 'active' : ''}`} type="button" aria-label={sidebarOpen ? 'Hide workspace sidebar' : 'Show files and projects'} onClick={() => setSidebarOpen((open) => !open)}><Menu size={19} /></button>
           <BrandMark />
-          <span className="brand-word">ledger<span>AI</span></span>
+          <span className="brand-word">Ledger <span>AI</span></span>
           <span className="header-separator" />
           <button className={`header-view ${view === 'chat' ? 'current' : ''}`} type="button" onClick={() => setView('chat')}><MessageSquareText size={14} /> Chat</button>
           {activePath && <button className={`header-view file-view-tab ${view === 'file' ? 'current' : ''}`} type="button" onClick={() => setView('file')}><LanguageIcon path={activePath} size={14} />{activePath.split('/').pop()} {dirty && <span className="dirty-dot" />}</button>}
         </div>
         <div className="header-actions">
+          <button className="icon-button theme-toggle" type="button" onClick={() => setTheme((current) => current === 'dark' ? 'light' : 'dark')} aria-label={`Switch to ${theme === 'dark' ? 'light' : 'dark'} mode`} title={`Switch to ${theme === 'dark' ? 'light' : 'dark'} mode`}>{theme === 'dark' ? <Sun size={16} /> : <Moon size={16} />}</button>
           <div className="project-switch-wrap" ref={projectMenuRef}>
             <button className={`project-switcher ${projectMenuOpen ? 'open' : ''}`} type="button" onClick={() => setProjectMenuOpen((open) => !open)}><span className="project-indicator" /><span className="project-switch-name">{projectName}</span><ChevronDown size={14} /></button>
             {projectMenuOpen && <div className="project-menu">
-              <div className="project-menu-label">YOUR PROJECTS <span>{projects.length}</span></div>
-              {projects.map((item) => <button key={item.id} className={`project-menu-item ${project?.id === item.id ? 'selected' : ''}`} type="button" onClick={() => selectProject(item)}><span className="project-mini-icon"><Code2 size={14} /></span><span>{item.name}<small>Project/{item.id}</small></span>{project?.id === item.id && <Check size={15} />}</button>)}
+              <div className="project-menu-label">PROJECTS <span>{projects.length}</span></div>
+              {projects.map((item) => <button key={item.id} className={`project-menu-item ${project?.id === item.id ? 'selected' : ''}`} type="button" onClick={() => selectProject(item)}><span className="project-mini-icon"><Code2 size={14} /></span><span>{item.name}</span>{project?.id === item.id && <Check size={15} />}</button>)}
               {projects.length === 0 && <p className="project-menu-empty">No projects yet</p>}
               <div className="project-menu-actions"><button type="button" onClick={() => { setCreatedDialogName(''); setDialog({ kind: 'project', mode: 'create' }); setProjectMenuOpen(false); }}><Plus size={14} /> New project</button>{project && <><button type="button" onClick={() => { setCreatedDialogName(project.name); setDialog({ kind: 'project', mode: 'rename' }); setProjectMenuOpen(false); }}><MoreHorizontal size={14} /> Rename</button><button type="button" className="danger-link" onClick={() => { setDialog({ kind: 'delete-project', project }); setProjectMenuOpen(false); }}><Trash2 size={14} /> Delete</button></>}</div>
             </div>}
           </div>
-          <button className="header-new-project" type="button" onClick={() => { setCreatedDialogName(''); setDialog({ kind: 'project', mode: 'create' }); }}><Plus size={15} /><span>New project</span></button>
-          <span className="header-status"><span className="online-dot" /> Agent ready</span>
         </div>
       </header>
 
       <div className={`workspace ${sidebarOpen ? 'sidebar-visible' : ''}`}>
         {sidebarOpen && <aside className="sidebar">
-          <div className="sidebar-top"><div><span className="eyebrow">WORKSPACE</span><div className="sidebar-title">{sidebarTab === 'files' ? 'Explorer' : 'Projects'}</div></div><div className="sidebar-heading-actions">{sidebarTab === 'files' && <><FileIconButton title="New file" onClick={() => createDialog('file')}><FilePlus2 size={15} /></FileIconButton><FileIconButton title="New folder" onClick={() => createDialog('folder')}><FolderPlus size={15} /></FileIconButton></>}<FileIconButton title="Hide workspace sidebar" onClick={() => setSidebarOpen(false)}><PanelLeftClose size={15} /></FileIconButton></div></div>
+          <div className="sidebar-top"><div><div className="sidebar-title">{sidebarTab === 'files' ? 'Files' : 'Projects'}</div></div><div className="sidebar-heading-actions">{sidebarTab === 'files' && <><FileIconButton title="New file" onClick={() => createDialog('file')}><FilePlus2 size={15} /></FileIconButton><FileIconButton title="New folder" onClick={() => createDialog('folder')}><FolderPlus size={15} /></FileIconButton></>}<FileIconButton title="Hide sidebar" onClick={() => setSidebarOpen(false)}><PanelLeftClose size={15} /></FileIconButton></div></div>
           <div className="sidebar-tabs" role="tablist" aria-label="Workspace sidebar">
             <button id="files-tab" type="button" role="tab" aria-selected={sidebarTab === 'files'} aria-controls="files-panel" className={`sidebar-tab ${sidebarTab === 'files' ? 'active' : ''}`} onClick={() => setSidebarTab('files')}><Files size={14} /><span>Files</span></button>
             <button id="projects-tab" type="button" role="tab" aria-selected={sidebarTab === 'projects'} aria-controls="projects-panel" className={`sidebar-tab ${sidebarTab === 'projects' ? 'active' : ''}`} onClick={() => setSidebarTab('projects')}><FolderOpen size={14} /><span>Projects</span><span className="sidebar-tab-count">{projects.length}</span></button>
           </div>
           {sidebarTab === 'files' ? <div className="sidebar-tab-panel" id="files-panel" role="tabpanel" aria-labelledby="files-tab">
-            <div className="sidebar-project"><div className="sidebar-project-icon"><Code2 size={15} /></div><div className="sidebar-project-copy"><strong>{projectName}</strong><small>{project ? `Project/${project.id}` : 'Choose a project'}</small></div><button type="button" className="icon-button sidebar-project-menu" title="Project options" onClick={() => setProjectMenuOpen((open) => !open)}><MoreHorizontal size={16} /></button></div>
-            <div className="tree-heading"><span>FILES</span><span className="tree-root-label">{project?.id || 'No project'}</span></div>
+            <div className="sidebar-project"><div className="sidebar-project-icon"><Code2 size={15} /></div><div className="sidebar-project-copy"><strong>{projectName}</strong><small>{project ? 'Project' : 'Choose a project'}</small></div><button type="button" className="icon-button sidebar-project-menu" title="Project options" onClick={() => setProjectMenuOpen((open) => !open)}><MoreHorizontal size={16} /></button></div>
             <div className="tree-scroll">
-              {!project ? <div className="sidebar-empty"><Files size={21} /><strong>No project open</strong><span>Create or choose a project to browse its files.</span><button type="button" onClick={() => { setDialog({ kind: 'project', mode: 'create' }); setCreatedDialogName(''); }}><Plus size={14} /> Create project</button></div> : treeLoading ? <div className="tree-loading"><LoaderCircle size={14} className="spin" /> Loading files…</div> : <FileTree nodes={tree} activePath={activePath} onOpenFile={(path) => void openFile(path)} onDelete={(node) => setDialog({ kind: 'delete-path', node })} onFolderFocus={setActiveFolder} onPreviewImage={(path) => setImage({ src: api.assetUrl(project.id, path), label: path.split('/').pop() || path })} />}
+              {!project ? <div className="sidebar-empty"><Files size={21} /><strong>No project</strong><button type="button" onClick={() => { setDialog({ kind: 'project', mode: 'create' }); setCreatedDialogName(''); }}><Plus size={14} /> Create project</button></div> : treeLoading ? <div className="tree-loading"><LoaderCircle size={14} className="spin" /> Loading…</div> : <FileTree nodes={tree} activePath={activePath} onOpenFile={(path) => void openFile(path)} onDelete={(node) => setDialog({ kind: 'delete-path', node })} onFolderFocus={setActiveFolder} onPreviewImage={(path) => setImage({ src: api.assetUrl(project.id, path), label: path.split('/').pop() || path })} />}
             </div>
           </div> : <div className="projects-panel" id="projects-panel" role="tabpanel" aria-labelledby="projects-tab">
-            <div className="projects-panel-heading"><button className="projects-create" type="button" aria-label="Create project" title="Create project" onClick={() => { setCreatedDialogName(''); setDialog({ kind: 'project', mode: 'create' }); }}><Plus size={18} /></button><div className="projects-heading-copy"><strong>Available projects</strong><span>Select one to open its files</span></div></div>
-            <div className="projects-scroll">{projects.length ? projects.map((item) => <button key={item.id} type="button" className={`project-card ${project?.id === item.id ? 'selected' : ''}`} aria-current={project?.id === item.id ? 'page' : undefined} title={`Open ${item.name}`} onClick={() => { selectProject(item); setSidebarTab('files'); }}><span className="project-card-icon"><Code2 size={18} /></span><span className="project-card-copy"><strong>{item.name}</strong><small>Project/{item.id}</small></span>{project?.id === item.id && <span className="project-card-check"><Check size={15} /></span>}</button>) : <div className="projects-empty"><FolderOpen size={22} /><strong>No projects yet</strong><span>Create a project to give it a dedicated workspace.</span></div>}</div>
+            <div className="projects-panel-heading"><button className="projects-create" type="button" aria-label="Create project" title="Create project" onClick={() => { setCreatedDialogName(''); setDialog({ kind: 'project', mode: 'create' }); }}><Plus size={18} /></button><div className="projects-heading-copy"><strong>Your projects</strong></div></div>
+            <div className="projects-scroll">{projects.length ? projects.map((item) => <button key={item.id} type="button" className={`project-card ${project?.id === item.id ? 'selected' : ''}`} aria-current={project?.id === item.id ? 'page' : undefined} title={`Open ${item.name}`} onClick={() => { selectProject(item); setSidebarTab('files'); }}><span className="project-card-icon"><Code2 size={18} /></span><span className="project-card-copy"><strong>{item.name}</strong></span>{project?.id === item.id && <span className="project-card-check"><Check size={15} /></span>}</button>) : <div className="projects-empty"><FolderOpen size={22} /><strong>No projects yet</strong></div>}</div>
           </div>}
-          <div className="sidebar-footer"><span className="sandbox-lock"><Command size={13} /> Sandboxed filesystem</span><span className="sandbox-state">Project/</span></div>
+          <div className="sidebar-footer"><span className="sandbox-lock"><Check size={13} /> Projects saved</span></div>
         </aside>}
 
         <main className="main-panel">
@@ -503,12 +522,10 @@ export default function App() {
                 {messages.length === 0 ? (
                   <div className="welcome-screen">
                     <div className="welcome-mark"><BrandMark /></div>
-                    <span className="welcome-kicker">YOUR AI DEVELOPMENT PARTNER</span>
                     <h1>What are we<br /><em>building?</em></h1>
-                    <p>Think it through, work through the code, and keep moving.<br />Ledger works directly inside your project files.</p>
-                    {project ? <div className="welcome-project"><span className="project-indicator" /> Working in <strong>{project.name}</strong><button type="button" onClick={() => setSidebarOpen(true)}>Browse files</button></div> : <button className="welcome-create" type="button" onClick={() => { setCreatedDialogName(''); setDialog({ kind: 'project', mode: 'create' }); }}><Plus size={15} /> Create your first project <span>· stored in Project/</span></button>}
+                    {project ? <div className="welcome-project"><span className="project-indicator" /><strong>{project.name}</strong><button type="button" onClick={() => { setSidebarOpen(true); setSidebarTab('files'); }}>Open files</button></div> : <button className="welcome-create" type="button" onClick={() => { setCreatedDialogName(''); setDialog({ kind: 'project', mode: 'create' }); }}><Plus size={15} /> New project</button>}
                     <div className="starter-prompts">
-                      {(project ? ['Explore this codebase', 'Help me plan a feature', 'Create a new file'] : ['Help me plan an app', 'How does the workspace work?', 'Start a new project']).map((prompt) => <button type="button" key={prompt} onClick={() => void sendMessage(prompt)}><Sparkles size={13} />{prompt}<ArrowUp size={12} /></button>)}
+                      {(project ? ['Explore code', 'Plan a feature', 'Create a file'] : ['Explore Ledger', 'Plan an idea', 'Create a project']).map((prompt) => <button type="button" key={prompt} onClick={() => void sendMessage(prompt)}><Sparkles size={13} />{prompt}<ArrowUp size={12} /></button>)}
                     </div>
                   </div>
                 ) : <div className="conversation-list">
@@ -526,9 +543,8 @@ export default function App() {
               <div className="composer-wrap">
                 <div className={`composer ${busy ? 'is-busy' : ''}`}>
                   <textarea ref={draftRef} value={draft} onChange={(event) => setDraft(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); void sendMessage(); } }} placeholder="Message Ledger…" rows={1} aria-label="Message Ledger" />
-                  <div className="composer-bottom"><div className="composer-context"><span className="context-icon"><Sparkles size={13} /></span><span>{project ? <>Working in <strong>{project.name}</strong></> : 'Create a project to let Ledger work with your files'}</span></div><div className="composer-controls"><span className="enter-hint"><CornerDownLeft size={12} /> to send</span>{busy ? <button className="send-button stop-button" type="button" onClick={cancelAgentTurn} aria-label="Stop agent"><Square size={13} fill="currentColor" /></button> : <button className="send-button" type="button" onClick={() => void sendMessage()} disabled={!draft.trim()} aria-label="Send message"><ArrowUp size={18} /></button>}</div></div>
+                  <div className="composer-bottom"><div className="composer-context"><span className="context-icon"><FolderOpen size={13} /></span><span>{project ? <strong>{project.name}</strong> : 'No project'}</span></div><div className="composer-controls">{busy ? <button className="send-button stop-button" type="button" onClick={cancelAgentTurn} aria-label="Stop agent"><Square size={13} fill="currentColor" /></button> : <button className="send-button" type="button" onClick={() => void sendMessage()} disabled={!draft.trim()} aria-label="Send message"><ArrowUp size={18} /></button>}</div></div>
                 </div>
-                <div className="composer-footnote">Ledger can make mistakes. Review changes before shipping.</div>
               </div>
             </section>
           ) : (
@@ -540,26 +556,26 @@ export default function App() {
                   <button className={`save-file-button ${dirty ? 'dirty' : ''}`} type="button" disabled={!dirty || saving} onClick={() => void saveActiveFile()}>{saving ? <LoaderCircle size={14} className="spin" /> : <Save size={14} />}<span>{saving ? 'Saving…' : 'Save'}</span><kbd>⌘ S</kbd></button>
                 </div>
               </div>
-              {activePath && markdownPreview && /\.mdx?$/i.test(activePath) ? <div className="markdown-file-scroll"><div className="markdown-file-paper"><span className="file-eyebrow"><LanguageIcon path={activePath} size={13} /> MARKDOWN DOCUMENT</span><MarkdownView content={fileContent} projectId={project?.id} filePath={activePath} onImageOpen={imageOpen} onOpenFile={(path) => void openFile(path)} /></div></div> : activePath ? <div className="monaco-wrap"><Editor height="100%" width="100%" path={activePath} language={languageForPath(activePath)} theme="ledger-midnight" value={fileContent} onChange={(value) => setFileContent(value || '')} onMount={handleEditorMount} options={editorOptions} loading={<div className="editor-loading"><LoaderCircle size={17} className="spin" /> Loading editor…</div>} /></div> : <div className="no-file-open"><BrandMark /><strong>Open a file to start editing</strong><span>Choose a file from the explorer or ask Ledger to create one.</span><button type="button" onClick={() => setSidebarOpen(true)}>Open explorer</button></div>}
-              <div className="editor-statusbar"><span><span className="status-dot" /> {project?.name || 'No project'}</span><span>{activePath ? languageForPath(activePath) : 'Plain text'} <b>·</b> UTF-8 <b>·</b> LF</span></div>
+              {activePath && markdownPreview && /\.mdx?$/i.test(activePath) ? <div className="markdown-file-scroll"><div className="markdown-file-paper"><MarkdownView content={fileContent} projectId={project?.id} filePath={activePath} onImageOpen={imageOpen} onOpenFile={(path) => void openFile(path)} /></div></div> : activePath ? <div className="monaco-wrap"><Editor height="100%" width="100%" path={activePath} language={languageForPath(activePath)} theme={theme === 'light' ? 'ledger-sand' : 'ledger-midnight'} value={fileContent} onChange={(value) => setFileContent(value || '')} onMount={handleEditorMount} options={editorOptions} loading={<div className="editor-loading"><LoaderCircle size={17} className="spin" /> Loading…</div>} /></div> : <div className="no-file-open"><BrandMark /><strong>Open a file</strong><button type="button" onClick={() => setSidebarOpen(true)}>Open files</button></div>}
+              <div className="editor-statusbar"><span><span className="status-dot" /> {project?.name || 'Workspace'}</span><span>{activePath ? languageForPath(activePath) : 'Text'}</span></div>
             </section>
           )}
         </main>
       </div>
 
-      {dialog?.kind === 'project' && <ModalFrame title={dialog.mode === 'create' ? 'Create a project' : 'Rename project'} description={dialog.mode === 'create' ? 'Every project gets its own folder inside the sandboxed Project directory.' : `The project folder will be renamed with “${createdDialogName.trim() || project?.name}”.`} onClose={() => setDialog(null)}>
-        <form className="dialog-form" onSubmit={(event) => void handleProjectSubmit(event)}><label htmlFor="project-name">Project name</label><input autoFocus id="project-name" value={createdDialogName} onChange={(event) => setCreatedDialogName(event.target.value)} placeholder="e.g. atlas-dashboard" maxLength={64} /><small>Folder names are made safe automatically. Your files stay inside Project/.</small><div className="dialog-actions"><button className="quiet-button" type="button" onClick={() => setDialog(null)}>Cancel</button><button className="primary-button" type="submit" disabled={!createdDialogName.trim()}><Plus size={15} />{dialog.mode === 'create' ? 'Create project' : 'Save name'}</button></div></form>
+      {dialog?.kind === 'project' && <ModalFrame title={dialog.mode === 'create' ? 'New project' : 'Rename project'} onClose={() => setDialog(null)}>
+        <form className="dialog-form" onSubmit={(event) => void handleProjectSubmit(event)}><label htmlFor="project-name">Name</label><input autoFocus id="project-name" value={createdDialogName} onChange={(event) => setCreatedDialogName(event.target.value)} placeholder="e.g. atlas-dashboard" maxLength={64} /><div className="dialog-actions"><button className="quiet-button" type="button" onClick={() => setDialog(null)}>Cancel</button><button className="primary-button" type="submit" disabled={!createdDialogName.trim()}><Plus size={15} />{dialog.mode === 'create' ? 'Create' : 'Save'}</button></div></form>
       </ModalFrame>}
 
-      {dialog?.kind === 'path' && <ModalFrame title={dialog.mode === 'file' ? 'Create a file' : 'Create a folder'} description={project ? `In ${project.name}${activeFolder ? ` / ${activeFolder}` : ''}` : 'Choose a project first.'} onClose={() => setDialog(null)}>
-        <form className="dialog-form" onSubmit={(event) => void handlePathSubmit(event)}><label htmlFor="path-name">{dialog.mode === 'file' ? 'File name' : 'Folder name'}</label><input autoFocus id="path-name" value={pathDialogName} onChange={(event) => setPathDialogName(event.target.value)} placeholder={dialog.mode === 'file' ? 'component.tsx' : 'components'} /><small>{dialog.mode === 'file' ? 'The file opens in the editor after it is created.' : 'New folders are created inside the selected project folder.'}</small><div className="dialog-actions"><button className="quiet-button" type="button" onClick={() => setDialog(null)}>Cancel</button><button className="primary-button" type="submit" disabled={!project || !pathDialogName.trim()}>{dialog.mode === 'file' ? <FilePlus2 size={15} /> : <FolderPlus size={15} />}{dialog.mode === 'file' ? 'Create file' : 'Create folder'}</button></div></form>
+      {dialog?.kind === 'path' && <ModalFrame title={dialog.mode === 'file' ? 'New file' : 'New folder'} description={project ? `${project.name}${activeFolder ? ` · ${activeFolder}` : ''}` : 'Choose a project first.'} onClose={() => setDialog(null)}>
+        <form className="dialog-form" onSubmit={(event) => void handlePathSubmit(event)}><label htmlFor="path-name">Name</label><input autoFocus id="path-name" value={pathDialogName} onChange={(event) => setPathDialogName(event.target.value)} placeholder={dialog.mode === 'file' ? 'component.tsx' : 'components'} /><div className="dialog-actions"><button className="quiet-button" type="button" onClick={() => setDialog(null)}>Cancel</button><button className="primary-button" type="submit" disabled={!project || !pathDialogName.trim()}>{dialog.mode === 'file' ? <FilePlus2 size={15} /> : <FolderPlus size={15} />}{dialog.mode === 'file' ? 'Create' : 'Create'}</button></div></form>
       </ModalFrame>}
 
       {(dialog?.kind === 'delete-project' || dialog?.kind === 'delete-path') && <ModalFrame title={dialog.kind === 'delete-project' ? 'Delete this project?' : 'Delete this item?'} description={deleteDescription} onClose={() => setDialog(null)}><div className="delete-dialog-copy"><span className="delete-warning-icon"><Trash2 size={18} /></span><div><strong>This cannot be undone</strong><span>Make sure there is nothing here you still need.</span></div></div><div className="dialog-actions"><button className="quiet-button" type="button" onClick={() => setDialog(null)}>Keep it</button><button className="danger-button" type="button" onClick={() => void confirmDelete()} disabled={pendingDelete}>{pendingDelete ? <LoaderCircle size={14} className="spin" /> : <Trash2 size={14} />}Delete permanently</button></div></ModalFrame>}
 
       {pendingNavigation && <ModalFrame title="Unsaved changes" description={pendingNavigation.kind === 'project' ? `Save or discard the changes in ${activePath || 'the current file'} before switching to ${pendingNavigation.project?.name || 'another project'}.` : `Save or discard the changes in ${activePath || 'the current file'} before opening ${pendingNavigation.path}.`} onClose={() => setPendingNavigation(null)}>
         <div className="dirty-dialog-copy"><span className="dirty-warning-icon"><Save size={17} /></span><div><strong>{activePath}</strong><span>Your edits are only in the editor until you save.</span></div></div>
-        <div className="dialog-actions"><button className="quiet-button" type="button" onClick={() => setPendingNavigation(null)}>Stay here</button><button className="quiet-button discard-button" type="button" onClick={() => void resolvePendingNavigation(false)}>Discard and continue</button><button className="primary-button" type="button" onClick={() => void resolvePendingNavigation(true)} disabled={saving}><Save size={14} />Save and continue</button></div>
+        <div className="dialog-actions unsaved-dialog-actions"><button className="quiet-button" type="button" onClick={() => setPendingNavigation(null)}>Stay here</button><button className="quiet-button discard-button" type="button" onClick={() => void resolvePendingNavigation(false)}>Discard and continue</button><button className="primary-button" type="button" onClick={() => void resolvePendingNavigation(true)} disabled={saving}><Save size={14} />Save and continue</button></div>
       </ModalFrame>}
 
       {image && <ImageModal image={image} onClose={() => setImage(null)} />}
