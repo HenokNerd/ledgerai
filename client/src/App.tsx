@@ -2,18 +2,21 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Editor, { type OnMount } from '@monaco-editor/react';
 import {
   ArrowUp, Check, ChevronDown, Code2,
-  Eye, FilePlus2, Files, FolderOpen, FolderPlus, LoaderCircle, Menu, MessageSquareText,
-  Moon, MoreHorizontal, PanelLeftClose, Plus, Save, Sparkles, Square, Sun, Trash2,
+  Eye, FileImage, FilePlus2, Files, FileText, FolderOpen, FolderPlus, LoaderCircle, Menu, MessageSquareText,
+  Moon, MoreHorizontal, Paperclip, PanelLeftClose, Plus, Save, Sparkles, Square, Sun, Trash2,
   X,
 } from 'lucide-react';
 import FileTree, { LanguageIcon, languageForPath } from './components/FileTree';
 import MarkdownView from './components/MarkdownView';
 import { ToolCallTile, ToolDetailsModal } from './components/ToolCallTile';
 import { api, streamAgent } from './lib/api';
-import type { AgentEvent, ChatMessage, FileNode, Project, ToolRun } from './types';
+import type { AgentEvent, ChatMessage, FileNode, Project, ToolRun, UploadedAttachment } from './types';
 
 const id = () => `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 const imagePattern = /\.(?:png|jpe?g|gif|webp|avif|svg)(?:[?#].*)?$/i;
+const MAX_ATTACHMENTS = 50;
+const MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
+const formatBytes = (bytes: number) => bytes === 0 ? '0 B' : bytes < 1024 * 1024 ? `${Math.max(1, Math.round(bytes / 1024))} KB` : `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 
 type DialogState = { kind: 'project'; mode: 'create' | 'rename' } | { kind: 'path'; mode: 'file' | 'folder' } | { kind: 'delete-project'; project: Project } | { kind: 'delete-path'; node: FileNode } | null;
 type PendingNavigation = { kind: 'project'; project: Project | null } | { kind: 'file'; path: string };
@@ -74,6 +77,9 @@ export default function App() {
   const [markdownPreview, setMarkdownPreview] = useState(true);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [draft, setDraft] = useState('');
+  const [pendingFiles, setPendingFiles] = useState<File[]>([]);
+  const [visionMode, setVisionMode] = useState(false);
+  const [uploading, setUploading] = useState(false);
   const [busy, setBusy] = useState(false);
   const [dialog, setDialog] = useState<DialogState>(null);
   const [image, setImage] = useState<ImageState>(null);
@@ -87,6 +93,7 @@ export default function App() {
   const [approvalBusy, setApprovalBusy] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const draftRef = useRef<HTMLTextAreaElement>(null);
+  const uploadInputRef = useRef<HTMLInputElement>(null);
   const abortRef = useRef<AbortController | null>(null);
   const turnSequenceRef = useRef(0);
   const toolsByIdRef = useRef(new Map<string, ToolRun>());
@@ -101,6 +108,7 @@ export default function App() {
     turnSequenceRef.current += 1;
     abortRef.current?.abort();
     abortRef.current = null;
+    setUploading(false);
     setBusy(false);
   };
 
@@ -132,7 +140,15 @@ export default function App() {
 
   useEffect(() => {
     let active = true;
-    void api.health().then(({ agentEnabled: available }) => { if (active) setAgentEnabled(available); }).catch(() => { if (active) setAgentEnabled(false); });
+    void api.health().then(({ agentEnabled: available, agentError }) => {
+      if (!active) return;
+      setAgentEnabled(available);
+      if (!available && agentError) setToast(agentError);
+    }).catch((error) => {
+      if (!active) return;
+      setAgentEnabled(false);
+      setToast((error as Error).message || 'The assistant could not connect.');
+    });
     return () => { active = false; };
   }, []);
 
@@ -394,24 +410,58 @@ export default function App() {
     }
   };
 
-  const sendMessage = async (value = draft) => {
-    const text = value.trim();
-    if (!text || busy || agentEnabled !== true) return;
-    const nextUser: ChatMessage = { id: id(), role: 'user', content: text };
-    const nextMessages = [...messages, nextUser];
-    setMessages(nextMessages);
-    setDraft('');
+  const handleAttachmentChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const selected = Array.from(event.currentTarget.files || []);
+    event.currentTarget.value = '';
+    if (!selected.length) return;
+    const remaining = Math.max(0, MAX_ATTACHMENTS - pendingFiles.length);
+    const accepted = selected.slice(0, remaining).filter((file) => file.size <= MAX_ATTACHMENT_BYTES);
+    if (accepted.length) setPendingFiles((current) => [...current, ...accepted].slice(0, MAX_ATTACHMENTS));
+    if (selected.some((file) => file.size > MAX_ATTACHMENT_BYTES)) setToast('Each attachment must be 10 MB or smaller.');
+    else if (selected.length > remaining) setToast('You can attach up to 50 files to one message.');
+  };
+
+  const sendMessage = async (value?: string) => {
+    const text = (value ?? draft).trim();
+    const files = value === undefined ? pendingFiles : [];
+    if ((!text && files.length === 0) || busy || agentEnabled !== true) return;
     setBusy(true);
+    setUploading(files.length > 0);
     const turnId = ++turnSequenceRef.current;
     const controller = new AbortController();
     abortRef.current = controller;
+    let userMessageAdded = false;
     try {
-      const context = nextMessages.filter((message) => message.content).map(({ role, content }) => ({ role, content })).slice(-24);
-      await streamAgent(projectRef.current?.id || null, context, (event) => { if (turnSequenceRef.current === turnId) handleAgentEvent(event); }, controller.signal);
+      const attachments: UploadedAttachment[] = files.length ? await api.uploadFiles(files, controller.signal) : [];
+      if (files.length && attachments.length !== files.length) throw new Error('Some selected files could not be uploaded. Try attaching them again.');
+      if (turnSequenceRef.current !== turnId) {
+        await Promise.allSettled(attachments.map((attachment) => api.deleteUpload(attachment.id)));
+        return;
+      }
+      const nextUser: ChatMessage = { id: id(), role: 'user', content: text, attachments };
+      const nextMessages = [...messages, nextUser];
+      setMessages(nextMessages);
+      setDraft('');
+      if (files.length) setPendingFiles([]);
+      userMessageAdded = true;
+      const context = nextMessages
+        .filter((message) => message.content || message.attachments?.length)
+        .map((message) => ({
+          role: message.role,
+          content: message.content,
+          ...(message.role === 'user' && message.attachments?.length ? { attachmentIds: message.attachments.map((attachment) => attachment.id) } : {}),
+        }))
+        .slice(-24);
+      setUploading(false);
+      await streamAgent(projectRef.current?.id || null, context, (event) => { if (turnSequenceRef.current === turnId) handleAgentEvent(event); }, controller.signal, { vision: visionMode });
     } catch (error) {
-      if (turnSequenceRef.current === turnId && (error as Error).name !== 'AbortError') setMessages((current) => [...current, { id: id(), role: 'assistant', content: `**I couldn’t finish that turn.**\n\n${(error as Error).message}\n\nYour message is still in the conversation—try again when you’re ready.` }]);
+      if (turnSequenceRef.current === turnId && (error as Error).name !== 'AbortError') {
+        const message = (error as Error).message;
+        if (userMessageAdded) setMessages((current) => [...current, { id: id(), role: 'assistant', content: `**I couldn’t finish that turn.**\n\n${message}\n\nYour message is still in the conversation—try again when you’re ready.` }]);
+        else setToast(message);
+      }
     } finally {
-      if (turnSequenceRef.current === turnId) { abortRef.current = null; setBusy(false); }
+      if (turnSequenceRef.current === turnId) { abortRef.current = null; setBusy(false); setUploading(false); }
     }
   };
 
@@ -532,7 +582,7 @@ export default function App() {
                     <h1>What are we<br /><em>building?</em></h1>
                     {project ? <div className="welcome-project"><span className="project-indicator" /><strong>{project.name}</strong><button type="button" onClick={() => { setSidebarOpen(true); setSidebarTab('files'); }}>Open files</button></div> : <button className="welcome-create" type="button" onClick={() => { setCreatedDialogName(''); setDialog({ kind: 'project', mode: 'create' }); }}><Plus size={15} /> New project</button>}
                     {agentEnabled === true && <div className="starter-prompts">
-                      {(project ? ['Explore code', 'Plan a feature', 'Create a file'] : ['Explore Ledger', 'Plan an idea', 'Create a project']).map((prompt) => <button type="button" key={prompt} onClick={() => void sendMessage(prompt)}><Sparkles size={13} />{prompt}<ArrowUp size={12} /></button>)}
+                      {(project ? ['Explore code', 'Plan a feature', 'Create a file'] : ['Explore workspace', 'Plan an idea', 'Create a project']).map((prompt) => <button type="button" key={prompt} onClick={() => void sendMessage(prompt)}><Sparkles size={13} />{prompt}<ArrowUp size={12} /></button>)}
                     </div>}
                   </div>
                 ) : <div className="conversation-list">
@@ -540,17 +590,27 @@ export default function App() {
                     {message.role === 'assistant' && <div className="assistant-avatar"><BrandMark small /></div>}
                     <div className={`message-body ${message.role === 'user' ? 'user-body' : 'assistant-body'}`}>
                       {message.content && <MarkdownView content={message.content} projectId={project?.id} onImageOpen={imageOpen} onOpenFile={(path) => void openFile(path)} />}
+                      {message.role === 'user' && message.attachments && message.attachments.length > 0 && <div className="message-attachments">{message.attachments.map((attachment) => <button key={attachment.id} type="button" className="message-attachment" disabled={!attachment.imageMimeType} title={attachment.imageMimeType ? 'Open image preview' : attachment.name} onClick={() => imageOpen(api.uploadPreviewUrl(attachment.id), attachment.name)}>{attachment.imageMimeType ? <FileImage size={13} /> : <FileText size={13} />}<span>{attachment.name}</span><small>{formatBytes(attachment.size)}</small></button>)}</div>}
                       {message.tools?.map((tool) => <ToolCallTile key={tool.id} tool={tool} onClick={setToolDetails} />)}
                     </div>
                   </article>)}
-                  {busy && !messages.some((message) => message.tools?.some((tool) => tool.status === 'running')) && <div className="thinking-row"><div className="assistant-avatar"><BrandMark small /></div><span className="thinking-indicator"><span /><span /><span /></span><span>Ledger is thinking</span></div>}
+                  {busy && !messages.some((message) => message.tools?.some((tool) => tool.status === 'running')) && <div className="thinking-row"><div className="assistant-avatar"><BrandMark small /></div><span className="thinking-indicator"><span /><span /><span /></span><span>{uploading ? 'Preparing attachments' : 'Thinking'}</span></div>}
                   <div className="scroll-end" />
                 </div>}
               </div>
               <div className="composer-wrap">
                 <div className={`composer ${busy ? 'is-busy' : ''}`}>
-                  <textarea ref={draftRef} value={draft} onChange={(event) => setDraft(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); void sendMessage(); } }} placeholder={agentEnabled === false ? 'AI chat is off here' : agentEnabled === null ? 'Connecting…' : 'Message Ledger…'} rows={1} aria-label={agentEnabled === false ? 'AI chat is off' : 'Message Ledger'} disabled={agentEnabled !== true} />
-                  <div className="composer-bottom"><div className="composer-context"><span className="context-icon"><FolderOpen size={13} /></span><span>{project ? <strong>{project.name}</strong> : 'No project'}</span></div><div className="composer-controls">{busy ? <button className="send-button stop-button" type="button" onClick={cancelAgentTurn} aria-label="Stop agent"><Square size={13} fill="currentColor" /></button> : <button className="send-button" type="button" onClick={() => void sendMessage()} disabled={!draft.trim() || agentEnabled !== true} aria-label={agentEnabled === false ? 'AI chat is off' : 'Send message'}><ArrowUp size={18} /></button>}</div></div>
+                  {pendingFiles.length > 0 && <div className="composer-attachments" aria-label={`${pendingFiles.length} attached files`}>{pendingFiles.map((file, index) => <span key={`${file.name}-${file.size}-${file.lastModified}-${index}`} className="pending-attachment"><FileText size={13} /><span className="attachment-chip-label"><strong>{file.name}</strong><small>{formatBytes(file.size)}</small></span><button type="button" className="attachment-remove" aria-label={`Remove ${file.name}`} disabled={busy} onClick={() => setPendingFiles((current) => current.filter((_, fileIndex) => fileIndex !== index))}><X size={13} /></button></span>)}</div>}
+                  <textarea ref={draftRef} value={draft} onChange={(event) => setDraft(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); void sendMessage(); } }} placeholder={agentEnabled === false ? 'AI chat is off here' : agentEnabled === null ? 'Connecting…' : 'Message…'} rows={1} aria-label={agentEnabled === false ? 'AI chat is off' : 'Message'} disabled={agentEnabled !== true} />
+                  <div className="composer-bottom">
+                    <div className="composer-context"><span className="context-icon"><FolderOpen size={13} /></span><span>{uploading ? 'Uploading files…' : project ? <strong>{project.name}</strong> : 'No project'}</span>{pendingFiles.length > 0 && <small className="attachment-count">{pendingFiles.length}/{MAX_ATTACHMENTS}</small>}</div>
+                    <div className="composer-controls">
+                      <input ref={uploadInputRef} className="file-input-hidden" type="file" multiple onChange={handleAttachmentChange} aria-hidden="true" tabIndex={-1} />
+                      <button className="attachment-button" type="button" title="Attach files" aria-label="Attach files" disabled={busy || pendingFiles.length >= MAX_ATTACHMENTS || agentEnabled !== true} onClick={() => uploadInputRef.current?.click()}><Paperclip size={15} /></button>
+                      <button className={`vision-toggle ${visionMode ? 'active' : ''}`} type="button" title="Enable visual understanding for attached images" aria-label="Vision mode" aria-pressed={visionMode} disabled={agentEnabled !== true} onClick={() => setVisionMode((enabled) => !enabled)}><Eye size={14} /><span>Vision</span></button>
+                      {busy ? <button className="send-button stop-button" type="button" onClick={cancelAgentTurn} aria-label={uploading ? 'Cancel upload' : 'Stop agent'}>{uploading ? <LoaderCircle size={14} className="spin" /> : <Square size={13} fill="currentColor" />}</button> : <button className="send-button" type="button" onClick={() => void sendMessage()} disabled={(!draft.trim() && pendingFiles.length === 0) || agentEnabled !== true} aria-label={agentEnabled === false ? 'AI chat is off' : 'Send message'}><ArrowUp size={18} /></button>}
+                    </div>
+                  </div>
                 </div>
               </div>
             </section>

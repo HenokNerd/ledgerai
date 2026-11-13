@@ -5,7 +5,7 @@ owner: henoknerd
 package: .
 env:
   NODE_ENV: production
-  LEDGER_AGENT_ENABLED: 'false'
+  LEDGER_AGENT_ENABLED: 'true'
   LEDGER_PROJECTS_ROOT: /data/Project
 volumes:
 - name: ledger-projects
@@ -28,5 +28,5 @@ annotations:
     commands:
       start: node server/index.mjs
   anybuild.run/provider: node
-  anybuild.run/version: 0.33.2
+  anybuild.run/version: 0.33.3
   wasmer.io/version: 7.5.0

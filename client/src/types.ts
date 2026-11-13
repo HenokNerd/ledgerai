@@ -14,6 +14,16 @@ export interface FileNode {
   children?: FileNode[];
 }
 
+export interface UploadedAttachment {
+  id: string;
+  name: string;
+  mimeType: string;
+  imageMimeType: string | null;
+  size: number;
+  createdAt: string;
+  previewUrl: string | null;
+}
+
 export interface ToolRun {
   id: string;
   name: string;
@@ -28,6 +38,7 @@ export interface ChatMessage {
   id: string;
   role: 'user' | 'assistant';
   content: string;
+  attachments?: UploadedAttachment[];
   tools?: ToolRun[];
 }
 

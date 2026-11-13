@@ -1,4 +1,4 @@
-import type { AgentEvent, FileNode, Project } from '../types';
+import type { AgentEvent, FileNode, Project, UploadedAttachment } from '../types';
 
 async function request<T>(url: string, init?: RequestInit): Promise<T> {
   const response = await fetch(url, init);
@@ -16,7 +16,7 @@ const json = (method: string, body?: unknown): RequestInit => ({
 const base = (id: string) => `/api/projects/${encodeURIComponent(id)}`;
 
 export const api = {
-  health: () => request<{ ok: boolean; agentEnabled: boolean }>('/api/health'),
+  health: () => request<{ ok: boolean; agentEnabled: boolean; agentError?: string | null }>('/api/health'),
   projects: () => request<Project[]>('/api/projects'),
   createProject: (name: string) => request<Project>('/api/projects', json('POST', { name })),
   renameProject: (id: string, name: string) => request<Project>(base(id), json('PATCH', { name })),
@@ -28,19 +28,30 @@ export const api = {
   deletePath: (id: string, path: string) => request<{ deleted: boolean; path: string }>(`${base(id)}/path?path=${encodeURIComponent(path)}`, { method: 'DELETE' }),
   readFile: (id: string, path: string) => request<{ path: string; content: string; size: number }>(`${base(id)}/file?path=${encodeURIComponent(path)}`),
   assetUrl: (id: string, path: string) => `${base(id)}/asset?path=${encodeURIComponent(path)}`,
+  uploadPreviewUrl: (id: string) => `/api/uploads/${encodeURIComponent(id)}/preview`,
+  uploadFiles: async (files: File[], signal?: AbortSignal): Promise<UploadedAttachment[]> => {
+    const body = new FormData();
+    files.forEach((file) => body.append('files', file, file.name));
+    const response = await fetch('/api/uploads', { method: 'POST', body, signal });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(data?.error || `Upload failed (${response.status}).`);
+    return Array.isArray(data?.files) ? data.files as UploadedAttachment[] : [];
+  },
+  deleteUpload: (id: string) => request<{ deleted: boolean }>(`/api/uploads/${encodeURIComponent(id)}`, { method: 'DELETE' }),
   approveTool: (approvalId: string, approved: boolean) => request<{ ok: boolean }>(`/api/chat/approvals/${encodeURIComponent(approvalId)}`, json('POST', { approved })),
 };
 
 export async function streamAgent(
   projectId: string | null,
-  messages: Array<{ role: 'user' | 'assistant'; content: string }>,
+  messages: Array<{ role: 'user' | 'assistant'; content: string; attachmentIds?: string[] }>,
   onEvent: (event: AgentEvent) => void,
   signal: AbortSignal,
+  options: { vision?: boolean } = {},
 ): Promise<void> {
   const response = await fetch('/api/chat', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Accept: 'text/event-stream' },
-    body: JSON.stringify({ projectId, messages }),
+    body: JSON.stringify({ projectId, messages, vision: options.vision === true, imageOrigin: window.location.origin }),
     signal,
   });
   if (!response.ok) {

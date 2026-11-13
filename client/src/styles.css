@@ -665,3 +665,43 @@ button:focus-visible, input:focus-visible, textarea:focus-visible { outline: 2px
   .welcome-mark { margin-bottom: 16px; }
   .starter-prompts { margin-top: 20px; }
 }
+
+
+/* Chat attachments and the neutral Vision control. */
+.composer-attachments { display: flex; flex-wrap: wrap; gap: 6px; max-height: 108px; overflow: auto; margin: 0 0 8px; scrollbar-width: thin; }
+.pending-attachment { max-width: min(220px, 100%); min-height: 31px; display: inline-flex; align-items: center; gap: 7px; padding: 4px 5px 4px 8px; border: 1px solid #35464c; border-radius: 8px; color: #8bd0df; background: #202b30; }
+.attachment-chip-label { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.attachment-chip-label strong { max-width: 150px; overflow: hidden; color: #d3e4e7; font-size: 9px; font-weight: 500; text-overflow: ellipsis; white-space: nowrap; }
+.attachment-chip-label small { color: #879297; font: 8px 'JetBrains Mono', monospace; }
+.attachment-remove { width: 22px; height: 22px; display: grid; place-items: center; flex: 0 0 auto; border: 0; border-radius: 5px; background: transparent; color: #9ba6aa; cursor: pointer; }
+.attachment-remove:hover:not(:disabled) { color: #fff; background: #3a464b; }
+.attachment-remove:disabled { opacity: .45; cursor: default; }
+.file-input-hidden { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
+.composer-controls { gap: 7px; }
+.attachment-button, .vision-toggle { height: 30px; display: inline-flex; align-items: center; justify-content: center; gap: 6px; border: 1px solid #353941; border-radius: 8px; background: #202127; color: #a4a8b0; cursor: pointer; transition: color .15s ease, background .15s ease, border-color .15s ease; }
+.attachment-button { width: 30px; padding: 0; }
+.attachment-button:hover:not(:disabled), .vision-toggle:hover:not(:disabled) { color: #e6eef0; border-color: #527582; background: #26343a; }
+.attachment-button:disabled, .vision-toggle:disabled { opacity: .5; cursor: not-allowed; }
+.vision-toggle { min-width: 73px; padding: 0 9px; font-size: 10px; }
+.vision-toggle.active { color: #9be0e9; border-color: #4d8a96; background: #20373d; box-shadow: inset 0 0 0 1px #4b909011; }
+.attachment-count { color: #7c8990; font: 8px 'JetBrains Mono', monospace; white-space: nowrap; }
+.message-attachments { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 7px; }
+.message-attachment { max-width: 230px; display: inline-flex; align-items: center; gap: 6px; padding: 5px 7px; border: 1px solid #3a464b; border-radius: 7px; background: #263137; color: #a6d8e1; cursor: pointer; font-size: 9px; }
+.message-attachment span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.message-attachment small { color: #89969a; font: 8px 'JetBrains Mono', monospace; white-space: nowrap; }
+.message-attachment:disabled { cursor: default; }
+.app-shell[data-theme="light"] .pending-attachment { color: #176D7B; background: #E7ECDD; border-color: #C8D6C8; }
+.app-shell[data-theme="light"] .attachment-chip-label strong { color: #33413A; }
+.app-shell[data-theme="light"] .attachment-chip-label small, .app-shell[data-theme="light"] .attachment-count { color: #68756C; }
+.app-shell[data-theme="light"] .attachment-remove { color: #637067; }
+.app-shell[data-theme="light"] .attachment-remove:hover:not(:disabled) { color: #202620; background: #D7E1D5; }
+.app-shell[data-theme="light"] .attachment-button, .app-shell[data-theme="light"] .vision-toggle { color: #56635B; background: #F4ECD8; border-color: #D6C9AA; }
+.app-shell[data-theme="light"] .attachment-button:hover:not(:disabled), .app-shell[data-theme="light"] .vision-toggle:hover:not(:disabled) { color: #164F59; background: #E2EBDD; border-color: #A9C2B7; }
+.app-shell[data-theme="light"] .vision-toggle.active { color: #155B68; background: #DDEBE4; border-color: #9ABDB4; }
+.app-shell[data-theme="light"] .message-attachment { color: #275B60; background: #EBF0E4; border-color: #C5D2C4; }
+.app-shell[data-theme="light"] .message-attachment small { color: #68756C; }
+@media (max-width: 520px) {
+  .vision-toggle { min-width: 65px; padding: 0 7px; }
+  .composer-controls { gap: 5px; }
+  .composer { padding-right: 10px; padding-left: 12px; }
+}
