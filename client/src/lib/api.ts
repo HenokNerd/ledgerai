@@ -62,10 +62,15 @@ export async function streamAgent(
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
   let buffer = '';
+  let completed = false;
   const consume = (block: string) => {
     const line = block.split('\n').find((candidate) => candidate.startsWith('data:'));
     if (!line) return;
-    try { onEvent(JSON.parse(line.slice(5).trim()) as AgentEvent); } catch { /* Ignore incomplete events. */ }
+    try {
+      const event = JSON.parse(line.slice(5).trim()) as AgentEvent;
+      if (event.type === 'assistant' || event.type === 'error') completed = true;
+      onEvent(event);
+    } catch { /* Ignore malformed or incomplete events; a missing terminal event is reported below. */ }
   };
   try {
     for (;;) {
@@ -78,6 +83,7 @@ export async function streamAgent(
     }
     buffer += decoder.decode();
     if (buffer.trim()) consume(buffer);
+    if (!completed && !signal.aborted) throw new Error('The connection ended before the assistant finished responding. Your message is still in the conversation—please retry.');
   } finally {
     reader.releaseLock();
   }

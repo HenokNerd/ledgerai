@@ -6,6 +6,8 @@ const API_ROOT = 'https://integrate.api.nvidia.com/v1';
 const STANDARD_MODEL = 'nvidia/nemotron-3-ultra-550b-a55b';
 const VISION_MODEL = 'nvidia/nemotron-3.5-super-vl-120b-a12b';
 const CHECK_TTL_MS = 60_000;
+const MAX_UPSTREAM_ATTEMPTS = 3;
+const RETRY_BASE_DELAY_MS = 400;
 const MAX_INLINE_TEXT_TOTAL = 48_000;
 const MAX_INLINE_TEXT_PER_FILE = 12_000;
 const MAX_VISION_IMAGES = 50;
@@ -13,6 +15,37 @@ const MAX_LOCAL_IMAGE_BYTES = 32 * 1024 * 1024;
 
 let credentialCheck = { checkedAt: 0, valid: false, error: 'The AI connection has not been checked.' };
 let credentialCheckPending = null;
+
+function isRetryableStatus(status) {
+  return status === 408 || status === 425 || status === 429 || status >= 500;
+}
+
+function retryDelay(response, attempt) {
+  const retryAfterHeader = response?.headers?.get('retry-after');
+  const retryAfter = retryAfterHeader === null ? NaN : Number(retryAfterHeader);
+  if (Number.isFinite(retryAfter) && retryAfter >= 0) return Math.min(retryAfter * 1000, 5_000);
+  return Math.min(RETRY_BASE_DELAY_MS * (2 ** (attempt - 1)), 2_000) + Math.floor(Math.random() * 150);
+}
+
+async function fetchWithRetry(url, options, label) {
+  const { timeoutMs, ...requestOptions } = options;
+  let lastError;
+  for (let attempt = 1; attempt <= MAX_UPSTREAM_ATTEMPTS; attempt += 1) {
+    let response;
+    try {
+      response = await fetch(url, { ...requestOptions, signal: AbortSignal.timeout(timeoutMs || 15_000) });
+      if (response.ok || !isRetryableStatus(response.status) || attempt === MAX_UPSTREAM_ATTEMPTS) return response;
+      console.warn(`[ledger-agent] ${label} returned HTTP ${response.status}; retrying (${attempt}/${MAX_UPSTREAM_ATTEMPTS - 1})`);
+      await response.body?.cancel().catch(() => {});
+    } catch (error) {
+      lastError = error;
+      if (attempt === MAX_UPSTREAM_ATTEMPTS) break;
+      console.warn(`[ledger-agent] ${label} request failed (${error?.name || 'network error'}); retrying (${attempt}/${MAX_UPSTREAM_ATTEMPTS - 1})`);
+    }
+    await new Promise((resolve) => setTimeout(resolve, retryDelay(response, attempt)));
+  }
+  throw lastError || new Error(`${label} failed after ${MAX_UPSTREAM_ATTEMPTS} attempts`);
+}
 
 export async function validateNvidiaCredential({ force = false } = {}) {
   const now = Date.now();
@@ -26,10 +59,10 @@ export async function validateNvidiaCredential({ force = false } = {}) {
         credentialCheck = { checkedAt: Date.now(), valid: false, error: 'The AI credential is missing. Check the server credential settings.' };
         return credentialCheck;
       }
-      const response = await fetch(`${API_ROOT}/models`, {
+      const response = await fetchWithRetry(`${API_ROOT}/models`, {
         headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' },
-        signal: AbortSignal.timeout(15_000),
-      });
+        timeoutMs: 15_000,
+      }, 'credential check');
       if (!response.ok) {
         credentialCheck = { checkedAt: Date.now(), valid: false, error: response.status === 401 || response.status === 403
           ? 'The AI credential was rejected. Check the server credential settings.'
@@ -173,19 +206,30 @@ export async function nvidiaChatCompletion(history, { vision = false, imageOrigi
     tool_choice: 'auto',
     max_tokens: 8192,
   };
-  const response = await fetch(`${API_ROOT}/chat/completions`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${process.env.NVIDIA.trim()}` },
-    body: JSON.stringify(payload),
-    signal: AbortSignal.timeout(120_000),
-  });
+  let response;
+  try {
+    response = await fetchWithRetry(`${API_ROOT}/chat/completions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${process.env.NVIDIA.trim()}` },
+      body: JSON.stringify(payload),
+      timeoutMs: 120_000,
+    }, 'chat completion');
+  } catch (error) {
+    console.error(`[ledger-agent] upstream chat request exhausted retries (${error?.name || 'network error'})`);
+    throw new Error('The AI service could not be reached after several attempts. Check your connection and try again.');
+  }
   const result = await response.json().catch(() => ({}));
   if (!response.ok || result?.error) {
     if (response.status === 401 || response.status === 403) {
       credentialCheck = { checkedAt: Date.now(), valid: false, error: 'The AI credential was rejected. Check the server credential settings.' };
     }
     console.error(`[ledger-agent] upstream request failed (HTTP ${response.status || 502})`);
-    throw new Error(response.status === 413 ? 'The attachments are too large for one AI request. Send fewer files or smaller images.' : `The AI service returned an error (HTTP ${response.status || 502}). Check the attachment and server settings, then try again.`);
+    const providerMessage = typeof result?.error?.message === 'string' ? result.error.message : '';
+    throw new Error(response.status === 413
+      ? 'The attachments are too large for one AI request. Send fewer files or smaller images.'
+      : response.status === 429
+        ? 'The AI service is temporarily rate-limited. Wait a moment and try again.'
+        : `The AI service returned an error (HTTP ${response.status || 502})${providerMessage ? `: ${providerMessage.slice(0, 240)}` : ''}. Check the attachment and server settings, then try again.`);
   }
   return result;
 }
