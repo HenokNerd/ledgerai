@@ -154,7 +154,10 @@ async function makeProviderMessages(history, { vision, imageOrigin }) {
       }
     }
     const text = textParts.filter(Boolean).join('\n\n');
-    prepared.push({ role: item.role, content: contentParts.length ? [{ type: 'text', text }, ...contentParts] : text });
+    const providerMessage = { role: item.role, content: contentParts.length ? [{ type: 'text', text }, ...contentParts] : text };
+    if (item.role === 'assistant' && Array.isArray(item.tool_calls)) providerMessage.tool_calls = item.tool_calls;
+    if (item.role === 'tool' && typeof item.tool_call_id === 'string') providerMessage.tool_call_id = item.tool_call_id;
+    prepared.push(providerMessage);
   }
   return prepared;
 }
@@ -179,8 +182,9 @@ export async function nvidiaChatCompletion(history, { vision = false, imageOrigi
   const result = await response.json().catch(() => ({}));
   if (!response.ok || result?.error) {
     if (response.status === 401 || response.status === 403) {
-      credentialCheck = { checkedAt: Date.now(), valid: false, error: 'The AI credential was rejected. Check the NVIDIA secret in the server settings.' };
+      credentialCheck = { checkedAt: Date.now(), valid: false, error: 'The AI credential was rejected. Check the server credential settings.' };
     }
+    console.error(`[ledger-agent] upstream request failed (HTTP ${response.status || 502})`);
     throw new Error(response.status === 413 ? 'The attachments are too large for one AI request. Send fewer files or smaller images.' : `The AI service returned an error (HTTP ${response.status || 502}). Check the attachment and server settings, then try again.`);
   }
   return result;

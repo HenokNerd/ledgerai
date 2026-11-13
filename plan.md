@@ -2,20 +2,26 @@
 
 ## Implementation approach
 
-Keep the existing React/Vite client and Express server. The client remains chat-first, with expandable full-screen filesystem-tool details, Monaco editing, Markdown rendering, project/file CRUD, and the established Files/Projects sidebar. Use the server filesystem module for sandboxed CRUD under `Project/`; do not add a terminal. Use `server/uploads.mjs` for unrestricted multipart uploads, with per-file size/count limits and generated opaque IDs under Wasmer's persistent `Upload/` folder. Pass those IDs with user turns to the server agent. Keep the NVIDIA credential on the server; use the standard configured model by default and select the vision-capable route only while the neutral Vision control is on. Do not show model/provider names. Treat image links as private app-relative previews, and keep destructive filesystem operations behind the existing approval gate.
+Keep the existing React/Vite client and Express server. The client remains chat-first, with expandable full-screen tool details, Monaco editing, Markdown rendering, project/file CRUD, the Files/Projects sidebar, and neutral Vision control. Keep all file operations inside the selected project under the persistent `Project/` root, and keep attachments in the sibling persistent `Upload/` root. Preserve the public no-login app, server-only AI credential, existing per-file upload limits, and provider/model-neutral UI.
 
-`app.yaml` mounts the persistent volume at `/data`, with `Project/` and `Upload/` as sibling directories. The server listens on the supplied `PORT` (default 3000), and the production container serves the Vite build. Do not require login. Preserve the current user-configured Wasmer secret and verify AI availability from the server without ever exposing its value.
+For this pass, map the Ergon `server/tools/filesystem.ts` interface into Ledger AI's existing files—do not add a new runtime module, package dependency, setup step, terminal, or general process runner. Expose the source tool names `read`, `write`, `edit`, `ls`, `cat`, and `glob` through the current tool-calling loop. Reuse Ledger's validated project path resolver instead of the source's string-prefix path check. Preserve the existing 1.5 MB editor limit, reject traversal and symlinks, skip `.git`, `node_modules`, and Ledger metadata, and bound directory/glob work. `cat` aliases `read`; the UI continues to show each call as an inspectable tile.
+
+The repository also contains separate patch, content-search, skills, Git, shell/process, MCP, and scheduling components. This round implements only the filesystem module; the other capabilities remain distinct and unenabled. Keep the already prepared privileged-capability proposal in `PRIVILEGED_TOOL_DESIGN.md`; do not expose Git, shell/process, MCP, or scheduling in the public no-login app until their authentication, isolation, safety controls, and product approval gates are resolved. No source code is copied verbatim.
+
+`app.yaml` mounts the persistent volume at `/data`, with `Project/` and `Upload/` as sibling directories. The server listens on the supplied `PORT` (default 3000), and the production container serves the Vite build. Do not require login. Preserve the current user-configured server secret and verify AI availability from the server without ever exposing its value.
 
 ## Project structure
 
 - `client/src/App.tsx`: chat-first workspace, projects/sidebar, composer, attachment queue, Vision control, tool/action modals, and theme state.
-- `client/src/components/`: file tree, language icons, Markdown renderer, and expandable tool-call details.
+- `client/src/components/`: file tree, language icons, Markdown renderer, and expandable tool-call details with filesystem-tool labels.
 - `client/src/lib/api.ts` and `client/src/types.ts`: typed project/filesystem, upload, and streaming-chat contracts.
 - `client/src/styles.css`: responsive dark and Blanche Diamond light visual system.
 - `server/index.mjs`: Express routes, filesystem agent loop, approvals, upload endpoints, and static serving.
-- `server/filesystem.mjs`: validated project-scoped filesystem operations under `Project/`.
+- `server/filesystem.mjs`: validated Project-scoped read/write/edit/list/glob operations, with no new runtime module.
 - `server/uploads.mjs`: unrestricted attachment storage, metadata, bounded text reads, image previews, and cleanup under sibling `Upload/`.
-- `server/nvidia.mjs`: server-side credential validation and default/vision chat routing.
+- `server/nvidia.mjs`: server-side credential validation, default/vision chat routing, and preservation of provider tool-call linkage across multi-step turns.
+- `PRIVILEGED_TOOL_DESIGN.md`: design-only gates for Git, shell/process, MCP, and scheduling; no production routes or credentials.
+- `ERGO_TOOL_REVIEW.md`: source-to-product disposition and rationale for reviewed Ergon components.
 - `app.yaml`: Wasmer runtime settings, secret injection, and persistent `/data` mount.
 
 ## Design direction

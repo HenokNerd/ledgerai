@@ -372,7 +372,7 @@ export default function App() {
       const toolPath = typeof tool.arguments.path === 'string' ? tool.arguments.path : '';
       if (tool.name === 'delete_path' && editor.projectId === currentId && editor.path && (editor.path === toolPath || editor.path.startsWith(`${toolPath}/`))) {
         setActivePath(null); setFileContent(''); setSavedContent(''); setView('chat');
-      } else if (editor.projectId === currentId && editor.path && ['create_file', 'update_file'].includes(tool.name) && toolPath === editor.path) {
+      } else if (editor.projectId === currentId && editor.path && ['create_file', 'update_file', 'write', 'edit'].includes(tool.name) && toolPath === editor.path) {
         if (editorSnapshotRef.current.dirty) setToast('Ledger changed this file on disk. Your unsaved editor draft was kept.');
         else {
           const file = await api.readFile(currentId, editor.path).catch(() => null);

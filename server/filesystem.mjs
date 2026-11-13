@@ -5,6 +5,13 @@ import path from 'node:path';
 export const PROJECTS_ROOT = path.resolve(process.env.LEDGER_PROJECTS_ROOT || path.resolve(process.cwd(), 'Project'));
 const META_FILE = '.ledger-project.json';
 const MAX_FILE_BYTES = 1_500_000;
+const MAX_EDIT_MATCHES = 10_000;
+const MAX_EDIT_STRING_BYTES = 100_000;
+const MAX_GLOB_PATTERN_CHARS = 256;
+const MAX_GLOB_VISITS = 5_000;
+const MAX_GLOB_RESULTS = 250;
+const MAX_GLOB_DEPTH = 16;
+const MAX_LS_ENTRIES = 1_000;
 const IMAGE_TYPES = new Set(['.png', '.jpg', '.jpeg', '.gif', '.webp', '.avif', '.svg']);
 
 export class FileSystemError extends Error {
@@ -159,6 +166,11 @@ export async function deleteProject(id) {
 
 export async function projectPath(id, relativePath = '', allowRoot = false) {
   const base = projectDirectory(id);
+  const baseInfo = await fs.lstat(base).catch((error) => {
+    if (error?.code === 'ENOENT') return null;
+    throw error;
+  });
+  if (!baseInfo || !baseInfo.isDirectory() || baseInfo.isSymbolicLink()) throw new FileSystemError('Project not found.', 404);
   const safeRelative = assertProjectRelativePath(relativePath, allowRoot);
   const target = safeRelative ? path.resolve(base, ...safeRelative.split('/')) : base;
   const relative = path.relative(base, target);
@@ -236,6 +248,175 @@ export async function writeProjectFile(id, relativePath, content, { createOnly =
   await fs.writeFile(target, text, 'utf8');
   await touchProject(id);
   return { path: relative, bytes: Buffer.byteLength(text, 'utf8'), created: !current };
+}
+
+export async function writeProjectFileRecursive(id, relativePath, content) {
+  const { relative } = await projectPath(id, relativePath);
+  const parentSegments = relative.split('/').slice(0, -1);
+  let parentRelative = '';
+  for (const segment of parentSegments) {
+    parentRelative = parentRelative ? `${parentRelative}/${segment}` : segment;
+    const { target } = await projectPath(id, parentRelative);
+    const existing = await fs.lstat(target).catch((error) => {
+      if (error?.code === 'ENOENT') return null;
+      throw error;
+    });
+    if (existing) {
+      if (!existing.isDirectory() || existing.isSymbolicLink()) throw new FileSystemError('A parent path is not a safe project folder.', 403);
+      continue;
+    }
+    try {
+      await fs.mkdir(target, { mode: 0o700 });
+    } catch (error) {
+      if (error?.code !== 'EEXIST') throw error;
+      const raced = await fs.lstat(target).catch(() => null);
+      if (!raced?.isDirectory() || raced.isSymbolicLink()) throw new FileSystemError('A parent path is not a safe project folder.', 403);
+    }
+  }
+  return writeProjectFile(id, relative, content);
+}
+
+export async function editProjectFile(id, relativePath, oldString, newString, replaceAll = false) {
+  const oldText = String(oldString ?? '');
+  const newText = String(newString ?? '');
+  if (!oldText) throw new FileSystemError('The text to find cannot be empty.');
+  if (typeof replaceAll !== 'boolean') throw new FileSystemError('replaceAll must be a boolean.');
+  if (Buffer.byteLength(oldText, 'utf8') > MAX_EDIT_STRING_BYTES || Buffer.byteLength(newText, 'utf8') > MAX_EDIT_STRING_BYTES) {
+    throw new FileSystemError('Each exact-text edit field is limited to 100 KB.', 413);
+  }
+  const file = await readProjectFile(id, relativePath);
+  let count = 0;
+  let cursor = 0;
+  while ((cursor = file.content.indexOf(oldText, cursor)) !== -1) {
+    count += 1;
+    if ((!replaceAll && count > 1) || count > MAX_EDIT_MATCHES) break;
+    cursor += oldText.length;
+  }
+  if (count === 0) throw new FileSystemError('oldString not found in file.');
+  if (!replaceAll && count > 1) throw new FileSystemError('Multiple matches found; set replaceAll to true to edit every occurrence.');
+  if (count > MAX_EDIT_MATCHES) throw new FileSystemError('This edit matches too many occurrences.', 413);
+
+  const replacedCount = replaceAll ? count : 1;
+  const expectedBytes = Buffer.byteLength(file.content, 'utf8') + replacedCount * (Buffer.byteLength(newText, 'utf8') - Buffer.byteLength(oldText, 'utf8'));
+  if (expectedBytes > MAX_FILE_BYTES) throw new FileSystemError('The edited file would exceed the 1.5 MB editor limit.', 413);
+  const content = replaceAll ? file.content.split(oldText).join(newText) : file.content.replace(oldText, newText);
+  const result = await writeProjectFile(id, relativePath, content);
+  return { ...result, replaced: replacedCount };
+}
+
+export async function listProjectDirectory(id, relativePath = '') {
+  const { target } = await projectPath(id, relativePath, true);
+  const info = await fs.lstat(target).catch(() => null);
+  if (!info || !info.isDirectory() || info.isSymbolicLink()) throw new FileSystemError('Folder not found.', 404);
+  const directory = await fs.opendir(target);
+  const items = [];
+  let scanned = 0;
+  let truncated = false;
+  try {
+    for await (const entry of directory) {
+      if (scanned >= MAX_LS_ENTRIES) { truncated = true; break; }
+      scanned += 1;
+      if (!visibleEntry(entry)) continue;
+      items.push({ name: entry.name, type: entry.isDirectory() ? 'directory' : entry.isFile() ? 'file' : 'other' });
+    }
+  } finally {
+    await directory.close().catch(() => {});
+  }
+  items.sort((left, right) => left.type !== right.type ? (left.type === 'directory' ? -1 : 1) : left.name.localeCompare(right.name));
+  return { items, truncated };
+}
+
+function globSegmentMatches(pattern, value) {
+  let patternIndex = 0;
+  let valueIndex = 0;
+  let lastStar = -1;
+  let retryIndex = 0;
+  while (valueIndex < value.length) {
+    if (patternIndex < pattern.length && (pattern[patternIndex] === '?' || pattern[patternIndex] === value[valueIndex])) {
+      patternIndex += 1;
+      valueIndex += 1;
+    } else if (pattern[patternIndex] === '*') {
+      lastStar = patternIndex;
+      patternIndex += 1;
+      retryIndex = valueIndex;
+    } else if (lastStar >= 0) {
+      patternIndex = lastStar + 1;
+      valueIndex = ++retryIndex;
+    } else return false;
+  }
+  while (pattern[patternIndex] === '*') patternIndex += 1;
+  return patternIndex === pattern.length;
+}
+
+function globMatches(patternSegments, fileSegments) {
+  const memo = new Map();
+  const match = (patternIndex, fileIndex) => {
+    const key = `${patternIndex}:${fileIndex}`;
+    if (memo.has(key)) return memo.get(key);
+    let result;
+    if (patternIndex === patternSegments.length) result = fileIndex === fileSegments.length;
+    else if (patternSegments[patternIndex] === '**') {
+      result = match(patternIndex + 1, fileIndex) || (fileIndex < fileSegments.length && match(patternIndex, fileIndex + 1));
+    } else {
+      result = fileIndex < fileSegments.length
+        && globSegmentMatches(patternSegments[patternIndex], fileSegments[fileIndex])
+        && match(patternIndex + 1, fileIndex + 1);
+    }
+    memo.set(key, result);
+    return result;
+  };
+  return match(0, 0);
+}
+
+export async function globProjectFiles(id, pattern, cwd = '') {
+  const rawPattern = String(pattern ?? '').replaceAll('\\', '/');
+  if (!rawPattern || rawPattern.length > MAX_GLOB_PATTERN_CHARS || rawPattern.startsWith('/') || rawPattern.includes('\0')) {
+    throw new FileSystemError('Enter a relative glob pattern up to 256 characters.');
+  }
+  const patternSegments = rawPattern.split('/').filter((segment) => segment && segment !== '.');
+  if (patternSegments.some((segment) => segment === '..' || ['.git', 'node_modules', '.ledger-project.json'].includes(segment))) {
+    throw new FileSystemError('The glob pattern must stay inside the selected project.');
+  }
+  const normalizedPattern = patternSegments.join('/');
+  if (!normalizedPattern) throw new FileSystemError('Enter a relative glob pattern.');
+  const rawCwd = String(cwd ?? '').replaceAll('\\', '/');
+  if (rawCwd.startsWith('/') || rawCwd.includes('\0') || rawCwd.split('/').some((segment) => segment === '..')) {
+    throw new FileSystemError('The glob base directory must stay inside the selected project.');
+  }
+  const safeCwd = rawCwd.split('/').filter((segment) => segment && segment !== '.').join('/');
+  const { target: base } = await projectPath(id, safeCwd, true);
+  const baseInfo = await fs.lstat(base).catch(() => null);
+  if (!baseInfo || !baseInfo.isDirectory() || baseInfo.isSymbolicLink()) throw new FileSystemError('Folder not found.', 404);
+  const files = [];
+  let visited = 0;
+  let truncated = false;
+
+  const walk = async (directory, relative = '', depth = 0) => {
+    if (depth > MAX_GLOB_DEPTH) { truncated = true; return; }
+    const handle = await fs.opendir(directory);
+    try {
+      for await (const entry of handle) {
+        if (visited >= MAX_GLOB_VISITS) { truncated = true; break; }
+        visited += 1;
+        if (!visibleEntry(entry)) continue;
+        const nextRelative = relative ? `${relative}/${entry.name}` : entry.name;
+        const absolute = path.join(directory, entry.name);
+        if (entry.isDirectory()) {
+          if (depth >= MAX_GLOB_DEPTH) { truncated = true; break; }
+          await walk(absolute, nextRelative, depth + 1);
+          if (truncated) break;
+        } else if (entry.isFile() && globMatches(patternSegments, nextRelative.split('/'))) {
+          if (files.length >= MAX_GLOB_RESULTS) { truncated = true; break; }
+          files.push(nextRelative);
+        }
+      }
+    } finally {
+      await handle.close().catch(() => {});
+    }
+  };
+
+  await walk(base);
+  return { files: files.sort(), visited, truncated };
 }
 
 export async function createProjectFolder(id, relativePath) {

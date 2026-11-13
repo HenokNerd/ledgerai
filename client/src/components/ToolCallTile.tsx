@@ -9,22 +9,24 @@ const labels: Record<string, string> = {
   list_projects: 'Listed projects', create_project: 'Created project', rename_project: 'Renamed project',
   delete_project: 'Deleted project', list_files: 'Inspected files', read_file: 'Read file',
   create_file: 'Created file', update_file: 'Updated file', create_folder: 'Created folder', delete_path: 'Deleted item',
+  read: 'Read file', write: 'Wrote file', edit: 'Edited file', ls: 'Listed directory', cat: 'Read file', glob: 'Found files',
 };
 
 function ToolIcon({ name, size = 15 }: { name: string; size?: number }) {
   if (name.includes('project')) return <Folders size={size} />;
-  if (name === 'list_files') return <Search size={size} />;
-  if (name === 'read_file') return <BookOpen size={size} />;
+  if (name === 'list_files' || name === 'glob') return <Search size={size} />;
+  if (name === 'read_file' || name === 'read' || name === 'cat') return <BookOpen size={size} />;
+  if (name === 'ls') return <Folder size={size} />;
   if (name === 'create_folder') return <FolderPlus size={size} />;
-  if (name === 'create_file') return <FilePlus2 size={size} />;
-  if (name === 'update_file') return <PencilLine size={size} />;
+  if (name === 'create_file' || name === 'write') return <FilePlus2 size={size} />;
+  if (name === 'update_file' || name === 'edit') return <PencilLine size={size} />;
   if (name.includes('delete')) return <Trash2 size={size} />;
   if (name.includes('folder')) return <Folder size={size} />;
   return <FileText size={size} />;
 }
 
 function targetLabel(tool: ToolRun) {
-  const value = tool.arguments.path || tool.arguments.name || tool.arguments.project_id || tool.arguments.id;
+  const value = tool.arguments.path || tool.arguments.pattern || tool.arguments.name || tool.arguments.project_id || tool.arguments.id;
   return typeof value === 'string' ? value : tool.name.replaceAll('_', ' ');
 }
 
