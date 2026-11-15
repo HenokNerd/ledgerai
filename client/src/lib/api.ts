@@ -1,4 +1,4 @@
-import type { AgentEvent, FileNode, Project, UploadedAttachment } from '../types';
+import type { AgentEvent, ChatMeta, ChatRecord, ChatSummary, FileNode, Project, TerminalJob, UploadedAttachment } from '../types';
 
 async function request<T>(url: string, init?: RequestInit): Promise<T> {
   const response = await fetch(url, init);
@@ -16,7 +16,7 @@ const json = (method: string, body?: unknown): RequestInit => ({
 const base = (id: string) => `/api/projects/${encodeURIComponent(id)}`;
 
 export const api = {
-  health: () => request<{ ok: boolean; agentEnabled: boolean; agentError?: string | null }>('/api/health'),
+  health: () => request<{ ok: boolean; agentEnabled: boolean; agentError?: string | null; terminalEnabled?: boolean }>('/api/health'),
   projects: () => request<Project[]>('/api/projects'),
   createProject: (name: string) => request<Project>('/api/projects', json('POST', { name })),
   renameProject: (id: string, name: string) => request<Project>(base(id), json('PATCH', { name })),
@@ -38,7 +38,30 @@ export const api = {
     return Array.isArray(data?.files) ? data.files as UploadedAttachment[] : [];
   },
   deleteUpload: (id: string) => request<{ deleted: boolean }>(`/api/uploads/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+  chats: () => request<ChatSummary[]>('/api/chats'),
+  chatBySlug: (slug: string) => request<{ id: string }>(`/api/chats/slug/${encodeURIComponent(slug)}`),
+  chat: (id: string, options?: { limit?: number; before?: string }) => {
+    const params = new URLSearchParams();
+    if (options?.limit) params.set('limit', String(options.limit));
+    if (options?.before) params.set('before', options.before);
+    const query = params.toString();
+    return request<ChatRecord>(`/api/chats/${encodeURIComponent(id)}${query ? `?${query}` : ''}`);
+  },
+  createChat: (data: { title?: string; icon?: string; projectId?: string | null }) => request<ChatRecord>('/api/chats', json('POST', data)),
+  saveChat: (id: string, data: { title?: string; icon?: string; projectId?: string | null; messages: ChatRecord['messages'] }) => request<ChatRecord>(`/api/chats/${encodeURIComponent(id)}`, json('PUT', data)),
+  deleteChat: (id: string) => request<{ deleted: boolean; id: string }>(`/api/chats/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+  chatMeta: (body: { text?: string; projectName?: string; firstPrompt?: string; firstResponse?: string; secondPrompt?: string; currentTitle?: string; currentIcon?: string }) => request<ChatMeta>('/api/chats/meta', json('POST', body)),
   approveTool: (approvalId: string, approved: boolean) => request<{ ok: boolean }>(`/api/chat/approvals/${encodeURIComponent(approvalId)}`, json('POST', { approved })),
+  terminalJobs: (ids?: string[], options: { activeOnly?: boolean; includeOutput?: boolean } = {}) => {
+    const params = new URLSearchParams();
+    if (ids?.length) params.set('ids', ids.join(','));
+    if (options.activeOnly) params.set('active', 'true');
+    if (options.includeOutput) params.set('output', 'true');
+    const query = params.toString();
+    return request<{ jobs: TerminalJob[] }>(`/api/terminal/jobs${query ? `?${query}` : ''}`);
+  },
+  terminalJob: (id: string, includeOutput = true) => request<{ job: TerminalJob }>(`/api/terminal/jobs/${encodeURIComponent(id)}${includeOutput ? '' : '?output=false'}`),
+  killTerminalJob: (id: string, signal = 'SIGTERM') => request<{ job: TerminalJob }>(`/api/terminal/jobs/${encodeURIComponent(id)}/kill`, json('POST', { signal })),
 };
 
 export async function streamAgent(

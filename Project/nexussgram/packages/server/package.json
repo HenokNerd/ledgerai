@@ -1,0 +1,46 @@
+{
+  "name": "@nexussgram/server",
+  "version": "0.0.0",
+  "private": true,
+  "main": "dist/index.js",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "lint": "eslint src --ext .ts",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "db:push": "prisma db push",
+    "db:migrate": "prisma migrate dev",
+    "db:studio": "prisma studio",
+    "db:generate": "prisma generate",
+    "check": "pnpm lint && pnpm typecheck && pnpm test"
+  },
+  "dependencies": {
+    "@fastify/cors": "^9.0.1",
+    "@fastify/cookie": "^9.3.1",
+    "@fastify/jwt": "^8.0.1",
+    "@prisma/client": "^5.14.0",
+    "fastify": "^4.27.0",
+    "fastify-type-provider-zod": "^1.2.0",
+    "zod": "^3.23.8",
+    "socket.io": "^4.7.5",
+    "ioredis": "^5.4.1",
+    "bcryptjs": "^2.4.3",
+    "date-fns": "^3.6.0",
+    "date-fns-tz": "^3.1.0",
+    "@nexussgram/shared": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/bcryptjs": "^2.4.6",
+    "@types/node": "^20.12.12",
+    "prisma": "^5.14.0",
+    "tsx": "^4.11.0",
+    "typescript": "^5.4.5",
+    "vitest": "^1.6.0",
+    "eslint": "^8.57.0",
+    "@nexussgram/eslint-config": "workspace:*",
+    "@nexussgram/tsconfig": "workspace:*"
+  }
+}

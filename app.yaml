@@ -1,7 +1,6 @@
 kind: wasmer.io/App.v0
-name: ledgerai
-app_id: da_nkPI5tJUqdmm
-owner: henoknerd
+name: ledgerapp
+owner: tadi0781
 package: .
 env:
   NODE_ENV: production
@@ -10,6 +9,8 @@ env:
 volumes:
 - name: ledger-projects
   mount: /data
+aliases:
+  - ledgerapp.wasmer.app
 annotations:
   anybuild.run/config:
     edgejs_enable: true
@@ -30,3 +31,4 @@ annotations:
   anybuild.run/provider: node
   anybuild.run/version: 0.33.3
   wasmer.io/version: 7.5.0
+app_id: da_K0DIkt5Ua0rw

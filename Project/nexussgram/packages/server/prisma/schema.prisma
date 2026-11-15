@@ -1,0 +1,444 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  USER
+  ADMIN
+  SUPER_ADMIN
+}
+
+enum PresenceStatus {
+  ONLINE
+  OFFLINE
+  AWAY
+}
+
+enum ChatType {
+  PRIVATE
+  GROUP
+  CHANNEL
+}
+
+enum MessageType {
+  TEXT
+  IMAGE
+  VIDEO
+  AUDIO
+  DOCUMENT
+  STICKER
+  CONTACT
+  LOCATION
+  POLL
+  SERVICE
+}
+
+enum GroupMemberStatus {
+  INVITED
+  ACCEPTED
+  LEFT
+  BANNED
+  KICKED
+}
+
+enum GroupMemberRole {
+  OWNER
+  ADMIN
+  MEMBER
+}
+
+enum ChannelMemberRole {
+  OWNER
+  ADMIN
+  MEMBER
+}
+
+enum AdminActionType {
+  MUTE
+  UNMUTE
+  BAN
+  UNBAN
+  WARN
+  PROMOTE
+  DEMOTE
+  REMOVE
+  DELETE_MESSAGE
+}
+
+model User {
+  id            String    @id @default(cuid())
+  phone         String?   @unique
+  phoneVerified Boolean   @default(false)
+  username      String?   @unique
+  displayName   String
+  avatarUrl     String?
+  bio           String?
+  role          UserRole  @default(USER)
+  isPublic      Boolean   @default(true) // true if has username, false if phone-only
+  lastSeen      DateTime? @default(now())
+  presence      PresenceStatus @default(OFFLINE)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  deletedAt     DateTime?
+
+  // Auth
+  passwordHash  String?
+  googleId      String?   @unique
+  email         String?   @unique
+  emailVerified Boolean   @default(false)
+
+  // Relations
+  chats              ChatParticipant[]
+  sentMessages       Message[]           @relation("MessageSender")
+  receivedMessages   Message[]           @relation("MessageReceiver")
+  reactions          Reaction[]          @relation("UserReactions")
+  messageReads       MessageRead[]       @relation("UserMessageReads")
+  contacts           Contact[]           @relation("ContactOwner")
+  contactOf          Contact[]           @relation("ContactTarget")
+  groupMembers       GroupMember[]
+  channelMembers     ChannelMember[]
+  adminActions       AdminAction[]       @relation("AdminActionActor")
+  targetActions      AdminAction[]       @relation("AdminActionTarget")
+  ownedGroups        Group[]             @relation("GroupOwner")
+  ownedChannels      Channel[]           @relation("ChannelOwner")
+  posts              ChannelPost[]       @relation("PostAuthor")
+  postReactions      PostReaction[]      @relation("UserPostReactions")
+  sessions           Session[]
+
+  @@index([username])
+  @@index([phone])
+  @@index([presence])
+  @@index([lastSeen])
+}
+
+model Session {
+  id        String   @id @default(cuid())
+  userId    String
+  token     String   @unique
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+  userAgent String?
+  ip        String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+}
+
+model Chat {
+  id          String    @id @default(cuid())
+  type        ChatType  @default(PRIVATE)
+  name        String?
+  avatarUrl   String?
+  description String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  deletedAt   DateTime?
+
+  // Relations
+  participants ChatParticipant[]
+  messages     Message[]
+  group        Group?
+  channel      Channel?
+
+  @@index([type])
+}
+
+model ChatParticipant {
+  id        String   @id @default(cuid())
+  chatId    String
+  userId    String
+  joinedAt  DateTime @default(now())
+  leftAt    DateTime?
+  isPinned  Boolean  @default(false)
+  isMuted   Boolean  @default(false)
+  unreadCount Int    @default(0)
+  lastReadMessageId String?
+
+  chat Chat @relation(fields: [chatId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([chatId, userId])
+  @@index([userId])
+  @@index([chatId])
+}
+
+model Message {
+  id          String      @id @default(cuid())
+  chatId      String
+  senderId    String
+  receiverId  String?     // For private chats, the other participant
+  type        MessageType @default(TEXT)
+  content     String?
+  mediaUrl    String?
+  mediaType   String?
+  mediaSize   Int?
+  replyToId   String?
+  forwardFromId String?
+  isEdited    Boolean     @default(false)
+  isDeleted   Boolean     @default(false)
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+  deletedAt   DateTime?
+
+  // Relations
+  chat       Chat       @relation(fields: [chatId], references: [id], onDelete: Cascade)
+  sender     User       @relation("MessageSender", fields: [senderId], references: [id], onDelete: Cascade)
+  receiver   User?      @relation("MessageReceiver", fields: [receiverId], references: [id], onDelete: SetNull)
+  replyTo    Message?   @relation("MessageReply", fields: [replyToId], references: [id], onDelete: SetNull)
+  replies    Message[]  @relation("MessageReply")
+  forwardFrom Message?  @relation("MessageForward", fields: [forwardFromId], references: [id], onDelete: SetNull)
+  forwards   Message[]  @relation("MessageForward")
+  reactions  Reaction[]
+  reads      MessageRead[]
+
+  @@index([chatId, createdAt])
+  @@index([senderId])
+  @@index([receiverId])
+  @@index([replyToId])
+}
+
+model MessageRead {
+  id        String   @id @default(cuid())
+  messageId String
+  userId    String
+  readAt    DateTime @default(now())
+
+  message Message @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  user    User    @relation("UserMessageReads", fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([messageId, userId])
+  @@index([userId])
+}
+
+model Reaction {
+  id        String   @id @default(cuid())
+  messageId String
+  userId    String
+  emoji     String   // Unicode emoji
+  createdAt DateTime @default(now())
+
+  message Message @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  user    User    @relation("UserReactions", fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([messageId, userId, emoji])
+  @@index([messageId])
+  @@index([userId])
+}
+
+model Group {
+  id          String   @id @default(cuid())
+  chatId      String   @unique
+  ownerId     String
+  name        String
+  avatarUrl   String?
+  description String?
+  inviteLink  String?  @unique
+  isPublic    Boolean  @default(false)
+  maxMembers  Int      @default(200000)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  deletedAt   DateTime?
+
+  // Relations
+  chat        Chat          @relation(fields: [chatId], references: [id], onDelete: Cascade)
+  owner       User          @relation("GroupOwner", fields: [ownerId], references: [id], onDelete: Cascade)
+  members     GroupMember[]
+  channels    Channel[]
+  comments    ChannelComment[] @relation("ChannelComments")
+  adminActions AdminAction[]  @relation("GroupAdminActions")
+
+  @@index([ownerId])
+  @@index([inviteLink])
+}
+
+model GroupMember {
+  id        String            @id @default(cuid())
+  groupId   String
+  userId    String
+  role      GroupMemberRole   @default(MEMBER)
+  status    GroupMemberStatus @default(INVITED)
+  joinedAt  DateTime?
+  invitedAt DateTime   @default(now())
+  invitedBy String?
+  leftAt    DateTime?
+  bannedAt  DateTime?
+  banExpiresAt DateTime?
+  muteExpiresAt DateTime?
+
+  group Group @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([groupId, userId])
+  @@index([userId])
+  @@index([groupId, status])
+  @@index([groupId, role])
+}
+
+model Channel {
+  id            String   @id @default(cuid())
+  chatId        String   @unique
+  ownerId       String
+  groupId       String?  // Linked group for comments
+  username      String   @unique
+  title         String
+  description   String?
+  avatarUrl     String?
+  isPublic      Boolean  @default(true)
+  memberCount   Int      @default(0)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  deletedAt     DateTime?
+
+  // Relations
+  chat          Chat             @relation(fields: [chatId], references: [id], onDelete: Cascade)
+  owner         User             @relation("ChannelOwner", fields: [ownerId], references: [id], onDelete: Cascade)
+  commentGroup  Group?           @relation(fields: [groupId], references: [id], onDelete: SetNull)
+  members       ChannelMember[]
+  posts         ChannelPost[]
+  adminActions  AdminAction[]    @relation("ChannelAdminActions")
+
+  @@index([ownerId])
+  @@index([username])
+  @@index([groupId])
+}
+
+model ChannelMember {
+  id        String             @id @default(cuid())
+  channelId String
+  userId    String
+  role      ChannelMemberRole  @default(MEMBER)
+  joinedAt  DateTime           @default(now())
+  leftAt    DateTime?
+
+  channel Channel @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([channelId, userId])
+  @@index([userId])
+  @@index([channelId, role])
+}
+
+model ChannelPost {
+  id          String   @id @default(cuid())
+  channelId   String
+  authorId    String
+  content     String?
+  mediaUrl    String?
+  mediaType   String?
+  replyToId   String?
+  viewCount   Int      @default(0)
+  forwardCount Int     @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  deletedAt   DateTime?
+
+  // Relations
+  channel   Channel       @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  author    User          @relation("PostAuthor", fields: [authorId], references: [id], onDelete: Cascade)
+  replyTo   ChannelPost?  @relation("PostReply", fields: [replyToId], references: [id], onDelete: SetNull)
+  replies   ChannelPost[] @relation("PostReply")
+  reactions PostReaction[]
+  comments  ChannelComment[]
+
+  @@index([channelId, createdAt])
+  @@index([authorId])
+}
+
+model PostReaction {
+  id        String   @id @default(cuid())
+  postId    String
+  userId    String
+  emoji     String
+  createdAt DateTime @default(now())
+
+  post ChannelPost @relation(fields: [postId], references: [id], onDelete: Cascade)
+  user User        @relation("UserPostReactions", fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([postId, userId, emoji])
+  @@index([postId])
+  @@index([userId])
+}
+
+model ChannelComment {
+  id        String   @id @default(cuid())
+  postId    String
+  groupId   String
+  messageId String   // Message in the linked group
+  createdAt DateTime @default(now())
+
+  post  ChannelPost @relation(fields: [postId], references: [id], onDelete: Cascade)
+  group Group       @relation("ChannelComments", fields: [groupId], references: [id], onDelete: Cascade)
+
+  @@unique([postId, messageId])
+  @@index([postId])
+  @@index([groupId])
+}
+
+model AdminAction {
+  id          String          @id @default(cuid())
+  actorId     String
+  targetId    String
+  groupId     String?
+  channelId   String?
+  action      AdminActionType
+  reason      String?
+  expiresAt   DateTime?
+  createdAt   DateTime        @default(now())
+
+  actor  User @relation("AdminActionActor", fields: [actorId], references: [id], onDelete: Cascade)
+  target User @relation("AdminActionTarget", fields: [targetId], references: [id], onDelete: Cascade)
+  group  Group?   @relation("GroupAdminActions", fields: [groupId], references: [id], onDelete: SetNull)
+  channel Channel? @relation("ChannelAdminActions", fields: [channelId], references: [id], onDelete: SetNull)
+
+  @@index([actorId])
+  @@index([targetId])
+  @@index([groupId])
+  @@index([channelId])
+  @@index([action])
+  @@index([expiresAt])
+}
+
+model Contact {
+  id        String   @id @default(cuid())
+  ownerId   String
+  targetId  String
+  name      String?  // Custom name for contact
+  isSaved   Boolean  @default(true)
+  createdAt DateTime @default(now())
+
+  owner User @relation("ContactOwner", fields: [ownerId], references: [id], onDelete: Cascade)
+  target User @relation("ContactTarget", fields: [targetId], references: [id], onDelete: Cascade)
+
+  @@unique([ownerId, targetId])
+  @@index([ownerId])
+  @@index([targetId])
+}
+
+model EmojiPack {
+  id          String   @id @default(cuid())
+  name        String   @unique
+  version     String
+  emojis      Json     // Array of emoji objects with metadata
+  isDefault   Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model TypingIndicator {
+  id        String   @id @default(cuid())
+  chatId    String
+  userId    String
+  startedAt DateTime @default(now())
+  expiresAt DateTime
+
+  @@unique([chatId, userId])
+  @@index([chatId])
+  @@index([expiresAt])
+}

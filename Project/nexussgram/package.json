@@ -1,0 +1,26 @@
+{
+  "name": "nexussgram",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Telegram-like messaging application",
+  "scripts": {
+    "dev": "concurrently \"pnpm -C packages/server dev\" \"pnpm -C packages/client dev\"",
+    "build": "pnpm -r build",
+    "check": "pnpm -r run check",
+    "lint": "pnpm -r lint",
+    "typecheck": "pnpm -r typecheck",
+    "test": "pnpm -r test",
+    "db:push": "pnpm -C packages/server db:push",
+    "db:migrate": "pnpm -C packages/server db:migrate",
+    "db:studio": "pnpm -C packages/server db:studio",
+    "clean": "pnpm -r exec rm -rf dist node_modules/.cache"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2",
+    "typescript": "^5.4.5"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "packageManager": "pnpm@9.1.0"
+}

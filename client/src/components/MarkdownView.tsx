@@ -1,3 +1,4 @@
+import { memo } from 'react';
 import ReactMarkdown from 'react-markdown';
 import rehypeSanitize from 'rehype-sanitize';
 import remarkGfm from 'remark-gfm';
@@ -28,7 +29,7 @@ function joinProjectPath(base: string, href: string): string | null {
   return stack.join('/');
 }
 
-export default function MarkdownView({ content, projectId, filePath = '', onImageOpen, onOpenFile }: MarkdownViewProps) {
+function MarkdownView({ content, projectId, filePath = '', onImageOpen, onOpenFile }: MarkdownViewProps) {
   const toUrl = (href: string) => {
     if (/^https?:\/\//i.test(href) || href.startsWith('/api/')) return href;
     if (!projectId) return href;
@@ -82,3 +83,5 @@ export default function MarkdownView({ content, projectId, filePath = '', onImag
     </div>
   );
 }
+
+export default memo(MarkdownView);
